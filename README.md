@@ -6,7 +6,7 @@ Argus 把多个目标软件窗口收进一个 Dashboard：每个目标软件一�
 
 - 产品名：Argus（内部定名，2026-11-21）
 - Tier：Tier 2（一般项目）
-- 当前阶段：M3 已完成（M1/M2 已实机验收；M3 验收口径为合成 fixture + 豆包工作真实视觉链路；AX 增强与其余客户端标定延后 M4）
+- 当前阶段：M4 内部 Alpha 进行中（M3 已完成并合入 `main`；3 目标 active OCR 4h soak 运行中）
 - 仓库：https://github.com/bayernjf/argus
 
 ## 当前状态

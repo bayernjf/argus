@@ -1,7 +1,7 @@
 # handoff — Argus
 
 - 更新日期：2026-11-22
-- 当前阶段：M3「回复完成检测 v1」已完成（2026-11-22 owner 接受“合成 fixture + 豆包工作真实视觉链路”为退出证据）。M1/M2/M3 核心已合入 `main`；豆包工作 Profile 与验收记录在 `dev`，`main` 合并前为 `6a6f43c`，本次状态更新随 PR 合入后以 merge commit 为准；AX 增强与 ChatGPT/Claude/Cursor 标定延后 M4。
+- 当前阶段：M4「内部 Alpha」进行中（2026-11-22 启动 3 目标 active OCR 4h soak）。M3 已完成并合入 `main`，merge `0b33a53`；M4 仍在 `dev`，AX 增强与 ChatGPT/Claude/Cursor 标定作为 M4 项继续。
 - Tier：2
 
 ## 当前状态
@@ -167,10 +167,18 @@ Profile：
 ## M3 交付状态（2026-11-22）
 
 - M3 代码/Profile/验收记录：`941cc69`（检测管线与 Dashboard）、`f342fdf`（合成 fixture 与构建脚本）、`1bfed2d`（M3 文档）、`335edbc`（豆包工作 Profile）、`dcb201b`（豆包工作视觉验收）、`a227092`（M3 状态收口）。
-- `dev` 已推送至 `a227092`；`main` 合并前为 `6a6f43c`，本次状态更新随 PR 合入后以 merge commit 为准。
+- `dev` 已推送至 `baf46f0`；PR #11 已合并到 `main`，merge `0b33a53`。
 - PR #9：`https://github.com/bayernjf/argus/pull/9`，CI `build-and-test` 通过（两次检查均 SUCCESS）；merge `57dd732`。
-- PR #10：`https://github.com/bayernjf/argus/pull/10`；merge `6a6f43c`，`main` 当前为该提交。
+- PR #10：`https://github.com/bayernjf/argus/pull/10`；merge `6a6f43c`。
+- PR #11：`https://github.com/bayernjf/argus/pull/11`；merge `0b33a53`。
 - 清理：fixture 进程与 Argus 测试进程已停止；测试 `targets.json` 归档到 `/tmp/argus-m3-targets-final.json`；`/tmp/ArgusM3Fixtures` 已删除；证据日志与截图保留；豆包工作合成会话与误发消息已由用户手动删除。
+
+## M4 内部 Alpha（进行中，2026-11-22）
+
+- 3 个合成 fixture 以 `soak` 模式运行：短文本每 0.5s 变化，Stop 保持可见；目标 A/B/C 均在 `Streaming`。
+- 4h CPU/RSS 采样：`build/soak-20261122-025745.log`，每 30s 一条。
+- 初始：3/3 Streaming，State 11s，Frame 0s；Argus 约 21.0% CPU / 156,816 KB；无 TCP/UDP 连接；Application Support 只有 `targets.json`。
+- `caffeinate -dimsu -t 14700` 覆盖 4h；4h 结束前 M4 不宣称完成。
 
 ## 未接线
 
@@ -180,9 +188,9 @@ Profile：
 
 ## 下一步
 
-1. M3 状态更新已提交 `a227092`；开 PR 合入 `main`（合并后以 merge commit 为准）。
-2. 进入 M4：4 小时 3 目标 soak、活跃 OCR CPU、隐私/脱敏检查。
-3. M4 内补 AX 增强、生成中长停顿真实负例、ChatGPT/Claude/Cursor 标定；这些不阻塞 M4 起步。
+1. 4h soak 结束后收集 CPU/RSS、PhaseSampler、隐私检查结果；未完成前 M4 不宣称完成。
+2. 之后做 M4 诊断/脱敏检查与 AX/其余客户端标定。
+3. 如果 soak 的活跃 CPU 明显高于 PRD ≤8% 目标，优先优化 OCR 节流/ROI，再做 4h 复测。
 
 ## 已拍板（2026-11-21）
 
