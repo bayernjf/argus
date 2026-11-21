@@ -177,7 +177,8 @@ Profile：
 
 - 3 个合成 fixture 以 `soak` 模式运行：短文本每 0.5s 变化，Stop 保持可见；目标 A/B/C 均在 `Streaming`。
 - 4h CPU/RSS 采样：`build/soak-20261122-025745.log`，每 30s 一条。
-- 初始：3/3 Streaming，State 11s，Frame 0s；Argus 约 21.0% CPU / 156,816 KB；无 TCP/UDP 连接；Application Support 只有 `targets.json`。
+- 初始采样（02:57–03:01）：3/3 `Streaming`，State 11s，Frame 0s；Argus 21.0–30.4% CPU / 139,232–156,816 KB；无 TCP/UDP 连接；Application Support 只有 `targets.json`。
+- 活跃 CPU 高于 PRD §9 ≤8% 目标，M4 需优化 OCR/ROI 后复测；RSS 初期从 156,816 KB 降到 139,232 KB，暂未见增长。
 - `caffeinate -dimsu -t 14700` 覆盖 4h；4h 结束前 M4 不宣称完成。
 
 ## 未接线
