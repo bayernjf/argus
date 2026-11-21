@@ -11,6 +11,7 @@
 - M1a `.app` bundle：`scripts/make-app.sh` 组装 `build/Argus.app`（bundle id `com.bayernjf.argus`，Info.plist 含 `NSScreenCaptureUsageDescription`；优先使用本机自签 `Argus Dev` 身份，缺失时回退 ad-hoc，`ARGUS_SIGN_IDENTITY` 可覆盖）。
 - M1b 窗口枚举与权限：`WindowEnumerator`（SCShareableContent → `CaptureWindowInfo` 过滤）+ `PermissionManager`（CGPreflight/CGRequest，激活时热更新）；被拒时 picker 内提供「Open System Settings」+「Retry」，不崩溃。
 - M1c 真实帧捕获：`ScreenCaptureSession`（`SCContentFilter(desktopIndependentWindow:)`、2 fps、960 宽比例输出、queueDepth 3、仅内存保留最新帧）；`DashboardStore` 管会话生命周期并以 250ms 轮询把帧喂给卡片；卡片显示 LIVE · 2 FPS / CONNECTING / CAPTURE ERROR 状态；窗口关闭通过 `CGWindowList` 复核转为失败态，权限撤销以失败态呈现，不崩溃。
+- Picker 去重：已监控窗口在列表中排除、`addTarget` 防重复兜底、移除后下次枚举恢复；全部合格窗口被监控时空列表给独立提示。
 - 核心逻辑：`ReplyPhase` / `ReplyActivity` / `ReplyCompletionDetector`；新增 `CaptureWindowInfo` 过滤与 `TargetApplication` 映射（纯逻辑，6 个单测覆盖）。
 - 文档：docs/07 bundle id 已确认（`com.bayernjf.argus`）；docs/03 M1 已标记完成；docs/08 R-10 已闭环。
 
@@ -49,7 +50,7 @@
 
 ```text
 swift build -> Build complete!
-swift test  -> Executed 13 tests, with 0 failures（新增 6 个 CaptureWindowInfo 单测）
+swift test  -> Executed 15 tests, with 0 failures（新增 8 个单测：6 CaptureWindowInfo + 2 监控排除）
 ./scripts/make-app.sh -> build/Argus.app (com.bayernjf.argus, Authority=Argus Dev)
 实机验收 -> 上述 2026-11-21 结果（截图取证 /tmp/argus-*.png，验收会话留存）
 ```
