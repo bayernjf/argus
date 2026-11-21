@@ -72,6 +72,21 @@ final class DashboardStore {
 
     /// Picked-window id per target (CGWindowID space, same as SCWindow.windowID).
     private var targetWindowIDs: [UUID: UInt32] = [:]
+    /// Owning process for the bound window, used by the optional AX signal.
+    private var targetProcessIDs: [UUID: Int32] = [:]
+    /// Detection parameters and state; one detector/analyzer per card so a
+    /// pause or rebind can never inherit another window's settle timer.
+    private var replyProfiles: [UUID: ReplyProfile] = [:]
+    private var detectors: [UUID: ReplyCompletionDetector] = [:]
+    private var analyzers: [UUID: ReplySignalAnalyzer] = [:]
+    private var lastDetectionAt: [UUID: Date] = [:]
+    private struct CachedAXSignal {
+        let value: Bool?
+        let sampledAt: Date
+    }
+    /// AX tree traversal is not free; 1 Hz is enough to catch a Stop control
+    /// disappearing while OCR samples at the faster visual cadence.
+    private var accessibilitySignals: [UUID: CachedAXSignal] = [:]
     /// Monotonic per-target attempt token; only the newest start may attach
     /// its stream when retries overlap (activation + picker Retry + rebuild).
     private var captureGeneration: [UUID: Int] = [:]
@@ -93,6 +108,7 @@ final class DashboardStore {
     private let accessibility: AccessibilityPermissionProviding
     private let activateWindow: WindowActivating
     private let makeSession: CaptureSessionFactory
+    private let profileForBundle: @Sendable (String) -> ReplyProfile
     private let files: TargetFileStore
     private var noticeTask: Task<Void, Never>?
     private var rebuildTask: Task<Void, Never>?
@@ -110,6 +126,7 @@ final class DashboardStore {
         activator: WindowActivating = AccessibilityWindowActivator(),
         initialTargets: [TargetApplication] = [],
         files: TargetFileStore = TargetFileStore(),
+        profileForBundle: @escaping @Sendable (String) -> ReplyProfile = { _ in .generic },
         captureFactory: @escaping CaptureSessionFactory = { targetID, window in
             try await ScreenCaptureSession(targetID: targetID, window: window)
         }
@@ -119,6 +136,7 @@ final class DashboardStore {
         self.activateWindow = activator
         self.targets = initialTargets
         self.files = files
+        self.profileForBundle = profileForBundle
         self.makeSession = captureFactory
         // TCC has no change notification; re-query when the app comes back
         // to the front, which covers "user granted/revoked in System
@@ -321,8 +339,14 @@ final class DashboardStore {
     func removeTarget(id: UUID) {
         targets.removeAll { $0.id == id }
         targetWindowIDs.removeValue(forKey: id)
+        targetProcessIDs.removeValue(forKey: id)
         captureGeneration.removeValue(forKey: id)
         pausedTargetIDs.remove(id)
+        replyProfiles.removeValue(forKey: id)
+        detectors.removeValue(forKey: id)
+        analyzers.removeValue(forKey: id)
+        lastDetectionAt.removeValue(forKey: id)
+        accessibilitySignals.removeValue(forKey: id)
         if let session = sessions.removeValue(forKey: id) {
             session.stop()
         }
@@ -359,6 +383,9 @@ final class DashboardStore {
             break
         }
         pausedTargetIDs.insert(id)
+        // Invalidate any in-flight detection/start result so it cannot land
+        // on the paused card after its last frame was frozen.
+        captureGeneration[id, default: 0] += 1
         if let session = sessions.removeValue(forKey: id) {
             session.stop()
         }
@@ -556,6 +583,8 @@ final class DashboardStore {
         }
         let generation = (captureGeneration[target.id] ?? 0) + 1
         captureGeneration[target.id] = generation
+        targetProcessIDs[target.id] = window.processID
+        resetDetection(for: target.id)
         captureStates[target.id] = .connecting
         ensureFramePolling()
         Task {
@@ -596,20 +625,24 @@ final class DashboardStore {
         guard pollTaskBox.task == nil else { return }
         pollTaskBox.task = Task {
             while !Task.isCancelled {
-                pollFrames()
+                await pollFrames()
                 try? await Task.sleep(nanoseconds: 250_000_000)
             }
         }
     }
 
-    private func pollFrames() {
+    private func pollFrames() async {
         var deadIDs: [UUID] = []
+        // Snapshot before any await: user actions can mutate `sessions`
+        // while OCR is running, and an iterator over a mutated dictionary is
+        // not a safe way to keep reading frames.
+        let liveSessions = sessions
         // One window-list snapshot per cycle instead of one per target:
         // three targets at 4 Hz used to mean 12 full CGWindowList copies a
         // second (M2a fix).
         let existingWindowIDs = sessions.isEmpty ? Set<UInt32>() : currentWindowIDs()
         var windowClosed = false
-        for (id, session) in sessions {
+        for (id, session) in liveSessions {
             // A closing app can deliver didStopWithError and remove its
             // window in the same beat. Window-gone wins over stream failure:
             // it is the recoverable case (M2c), while a bare failure is not.
@@ -619,12 +652,14 @@ final class DashboardStore {
             // minimized target is not mistaken for a closed one.
             if let windowID = targetWindowIDs[id], !existingWindowIDs.contains(windowID) {
                 captureStates[id] = .windowClosed
+                setPhase(.unknown, for: id)
                 windowClosed = true
                 deadIDs.append(id)
                 continue
             }
             if session.isFailed {
                 captureStates[id] = .failed(session.failureMessage ?? "Capture failed")
+                setPhase(.unknown, for: id)
                 deadIDs.append(id)
                 continue
             }
@@ -633,12 +668,109 @@ final class DashboardStore {
             if let index = targets.firstIndex(where: { $0.id == id }) {
                 targets[index].lastFrameAt = frame.capturedAt
             }
+            await analyzeFrameIfDue(
+                targetID: id,
+                frame: frame,
+                generation: captureGeneration[id] ?? 0
+            )
         }
         for id in deadIDs {
             sessions.removeValue(forKey: id)?.stop()
         }
         if windowClosed {
             ensureRebuildLoop()
+        }
+    }
+
+    // MARK: Reply detection
+
+    private func resetDetection(for id: UUID) {
+        guard let target = targets.first(where: { $0.id == id }) else { return }
+        let profile = profileForBundle(target.bundleIdentifier)
+        replyProfiles[id] = profile
+        detectors[id] = ReplyCompletionDetector(settleDuration: profile.settleDuration)
+        analyzers[id] = ReplySignalAnalyzer()
+        lastDetectionAt[id] = nil
+        accessibilitySignals[id] = nil
+        if let index = targets.firstIndex(where: { $0.id == id }) {
+            targets[index].phase = .idle
+            targets[index].phaseChangedAt = Date()
+        }
+    }
+
+    private func setPhase(_ phase: ReplyPhase, for id: UUID, at date: Date = Date()) {
+        guard let index = targets.firstIndex(where: { $0.id == id }) else { return }
+        if targets[index].phase != phase {
+            targets[index].phase = phase
+            targets[index].phaseChangedAt = date
+        }
+    }
+
+    /// Runs at most one OCR/visual observation per target per OCR interval.
+    /// The actor call and AX traversal suspend the MainActor rather than
+    /// blocking the UI; results re-check the capture generation before landing.
+    private func analyzeFrameIfDue(
+        targetID id: UUID,
+        frame: CaptureFrame,
+        generation: Int
+    ) async {
+        guard generation == captureGeneration[id],
+              captureStates[id] == .live,
+              !pausedTargetIDs.contains(id),
+              let profile = replyProfiles[id],
+              let analyzer = analyzers[id],
+              detectors[id] != nil
+        else { return }
+
+        let now = Date()
+        if let last = lastDetectionAt[id], now.timeIntervalSince(last) < profile.ocrInterval {
+            return
+        }
+        lastDetectionAt[id] = now
+
+        let accessibilityGenerating: Bool?
+        if let cached = accessibilitySignals[id],
+           now.timeIntervalSince(cached.sampledAt) < 1.0 {
+            accessibilityGenerating = cached.value
+        } else if let processID = targetProcessIDs[id],
+                  let target = targets.first(where: { $0.id == id }) {
+            let sampled = await Task.detached(priority: .utility) {
+                AXStopControlProbe.generatingIndicator(
+                    processID: processID,
+                    windowTitle: target.windowTitle
+                )
+            }.value
+            // A pause/rebind can land while the AX tree is being traversed;
+            // never cache the old window's signal for the new generation.
+            guard generation == captureGeneration[id],
+                  captureStates[id] == .live,
+                  !pausedTargetIDs.contains(id)
+            else { return }
+            accessibilitySignals[id] = CachedAXSignal(value: sampled, sampledAt: now)
+            accessibilityGenerating = sampled
+        } else {
+            accessibilityGenerating = nil
+        }
+
+        let observation = await analyzer.analyze(
+            frame: frame,
+            profile: profile,
+            accessibilityGenerating: accessibilityGenerating
+        )
+
+        guard generation == captureGeneration[id],
+              captureStates[id] == .live,
+              !pausedTargetIDs.contains(id),
+              var detector = detectors[id],
+              let currentProfile = replyProfiles[id]
+        else { return }
+
+        let phase = detector.observe(observation, profile: currentProfile, at: Date())
+        detectors[id] = detector
+        guard let index = targets.firstIndex(where: { $0.id == id }) else { return }
+        if targets[index].phase != phase {
+            targets[index].phase = phase
+            targets[index].phaseChangedAt = detector.phaseChangedAt
         }
     }
 

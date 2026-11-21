@@ -12,19 +12,24 @@ public struct CaptureWindowInfo: Identifiable, Hashable, Sendable {
     public var appBundleIdentifier: String
     public var windowTitle: String
     public var frame: CGRect
+    /// Owning process, when known. Accessibility probing uses it to inspect
+    /// only the process that owns the picked window, never a sibling instance.
+    public var processID: Int32?
 
     public init(
         id: UInt32,
         appName: String,
         appBundleIdentifier: String,
         windowTitle: String,
-        frame: CGRect
+        frame: CGRect,
+        processID: Int32? = nil
     ) {
         self.id = id
         self.appName = appName
         self.appBundleIdentifier = appBundleIdentifier
         self.windowTitle = windowTitle
         self.frame = frame
+        self.processID = processID
     }
 }
 

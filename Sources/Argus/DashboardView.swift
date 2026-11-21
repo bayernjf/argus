@@ -119,7 +119,7 @@ struct DashboardView: View {
             metric("Streaming", value: "\(store.targets.filter { $0.phase == .streaming }.count)")
             Spacer(minLength: 12)
             if showsHint {
-                Text("M2c: pause & auto-recover · detection lands in M3")
+                Text("M3: frame diff + OCR · Accessibility optional")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

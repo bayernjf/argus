@@ -10,6 +10,9 @@ public struct TargetApplication: Identifiable, Hashable, Codable, Sendable {
     public var bundleIdentifier: String
     public var windowTitle: String
     public var phase: ReplyPhase
+    /// When `phase` last changed. Nil on a restored card until live capture
+    /// establishes a fresh baseline; never persisted as current truth.
+    public var phaseChangedAt: Date?
     public var lastFrameAt: Date?
     public var note: String?
 
@@ -19,6 +22,7 @@ public struct TargetApplication: Identifiable, Hashable, Codable, Sendable {
         bundleIdentifier: String,
         windowTitle: String,
         phase: ReplyPhase = .idle,
+        phaseChangedAt: Date? = nil,
         lastFrameAt: Date? = nil,
         note: String? = nil
     ) {
@@ -27,6 +31,7 @@ public struct TargetApplication: Identifiable, Hashable, Codable, Sendable {
         self.bundleIdentifier = bundleIdentifier
         self.windowTitle = windowTitle
         self.phase = phase
+        self.phaseChangedAt = phaseChangedAt
         self.lastFrameAt = lastFrameAt
         self.note = note
     }

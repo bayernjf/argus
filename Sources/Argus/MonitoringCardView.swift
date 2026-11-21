@@ -249,26 +249,40 @@ struct MonitoringCardView: View {
             .controlSize(.small)
         }
 
-        HStack {
-            Text(statusDetail)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            Spacer()
-            if canTogglePause {
-                Button {
-                    onTogglePause?()
-                } label: {
-                    Image(systemName: isPaused ? "play.fill" : "pause.fill")
-                }
-                .buttonStyle(.borderless)
-                .help(isPaused ? "Resume capture" : "Pause capture")
-            }
-            if let lastFrameAt = target.lastFrameAt {
-                Text(lastFrameAt, style: .relative)
-                    .font(.caption2.monospacedDigit())
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(statusDetail)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer()
+                if canTogglePause {
+                    Button {
+                        onTogglePause?()
+                    } label: {
+                        Image(systemName: isPaused ? "play.fill" : "pause.fill")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(isPaused ? "Resume capture" : "Pause capture")
+                }
             }
+            HStack(spacing: 8) {
+                if let phaseChangedAt = target.phaseChangedAt {
+                    HStack(spacing: 3) {
+                        Text("State")
+                        Text(phaseChangedAt, style: .relative)
+                    }
+                }
+                if let lastFrameAt = target.lastFrameAt {
+                    HStack(spacing: 3) {
+                        Text("Frame")
+                        Text(lastFrameAt, style: .relative)
+                    }
+                }
+            }
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
         }
     }
 }

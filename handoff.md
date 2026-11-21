@@ -1,7 +1,7 @@
 # handoff — Argus
 
-- 更新日期：2026-11-21
-- 当前阶段：M2 已完成并通过实机验收（含 3 目标 30 分钟 soak、点击切窗时延、600/900 深浅色）；M1 已完成；M3 未开始
+- 更新日期：2026-11-22
+- 当前阶段：M3「回复完成检测 v1」进行中——核心、信号提取、Dashboard 接入与合成 fixture 正/负验收已完成；真实客户端 Profile 标定、文档收口与提交未完成。M1/M2 已完成并合入 `main`。
 - Tier：2
 
 ## 当前状态
@@ -18,7 +18,12 @@
 - M2b 点击切换：`AccessibilityWindowActivator` + `WindowMatchPolicy`；点击缩略图按 bundle 收集所有同名实例的 AX 窗口并读取标题、先匹配后激活。唯一匹配或单窗口才 raise；多候选/无候选不激活应用，避免跳错窗口；AX 未授权时只激活应用，顶部 banner 提示授权。Accessibility 请求由状态栏「Enable exact switching」显式触发，不在点击卡片时弹系统框。
 - M2c 生命周期：`CaptureState` 增加 `paused` / `windowClosed`；暂停停流并保留最后一帧（卡片标注 PAUSED），恢复优先绑定原窗口、失效才走严格唯一匹配；窗口关闭后每 10 秒枚举一次，仅在同 bundle 唯一可用窗口时自动重绑，多候选继续等待；暂停、移除、重绑与启动中的竞态均有守卫，不挂载过期 SCStream。布局最小宽度 900→600，状态条用 `ViewThatFits` 在窄窗隐藏提示；新增 `scripts/soak.sh` 采样 CPU/RSS 供 3 目标 30 分钟 soak 使用。
 - 核心逻辑：`ReplyPhase` / `ReplyActivity` / `ReplyCompletionDetector`；`CaptureWindowInfo` 过滤与映射、目标恢复纯逻辑均有单测覆盖。
-- 文档：docs/03 M2 标记进行中；docs/04 FR-06/07 更新为 in_progress；docs/05 新增 ADR-013（窗口关闭可恢复、暂停冻结最后一帧）；docs/06 证据刷新到 M2c；docs/08 R-07/R-08 状态更新；docs/07 bundle id 已确认。
+- M3 核心：新增 `ReplyObservation`、`ReplyProfile` / `NormalizedRect`、`LumaGrid`；`ReplyCompletionDetector` 增加 `phaseChangedAt`、observation 重载、settling 重开；`unknown` 清 settle 但保留 generating 历史。`ReplyProfile.generic`：settle 1.0s、OCR 0.5s、changeThreshold 0.005、confidence 0.6、`controlROI=nil`，避免正文 “stop” 被当控件。
+- M3 信号：每目标一个 `ReplySignalAnalyzer` actor；160×160 灰度帧差、SHA-256 文本指纹（不保留正文）、Vision `.fast` 本地 OCR、OCR 按“首帧/失败恢复/画面变化 + 间隔”节流；`AXStopControlProbe` 仅查绑定进程、唯一标题、enabled Stop-like `AXButton`，最多 600 节点/深度 8，`nil`=不可测量。
+- M3 融合：AX/视觉 Stop 为 true 直接 generating；文本变化 0.95；OCR 不可用降 0.45 走 unknown；文本稳定 + 小视觉变化置信 0.7，防止 spinner/光标期误完成；纯稳定 0.9。
+- M3 Dashboard：每目标 `replyProfiles`/`detectors`/`analyzers`/`lastDetectionAt`；0.25s 取帧、检测最多 0.5s 一次；回写前复核 generation/live/未暂停；暂停、移除、关窗清理检测状态；卡片 footer 两行 `State <relative>` / `Frame <relative>`；hint 改为 “M3: frame diff + OCR · Accessibility optional”。
+- M3 fixture：`Fixtures/ArgusChatProbe.swift` + `Fixtures/PhaseSampler.swift` + `scripts/build-m3-fixtures.sh`；A/B/C 三个合成 bundle，场景 `normal/stall/stallAx/static/blink`；事件日志只记生命周期标签与时间戳。
+- 文档：docs/02 检测章节改为 M3 实际实现；docs/03 M3 进行中并加切片；docs/04 FR-04/FR-12 改 in_progress；docs/05 新增 ADR-014（视觉基线 + AX 增强/否决）；docs/06 证据刷新到 M3；docs/08 R-01/R-02/R-13 更新。
 
 ## 实机验收结果（M1，2026-11-21，owner 本机 macOS 27）
 
@@ -78,17 +83,62 @@
 - soak：`build/soak-20261121-235849.log`。
 - probe 与测试 `targets.json` 验收后删除，不进入仓库。
 
+## M3 合成 fixture 验收结果（2026-11-22，自建 fixture，未捕获用户内容）
+
+结论：检测机制的正/负两轮通过；这是合成聊天窗口，不是真实 ChatGPT/Claude/Cursor，真实客户端 Profile 与阈值仍未标定，M3 不宣称完成。
+
+正例：
+
+- A/B/C 均 `Idle → Streaming → Settling → Completed`。
+- fixture `finish` 到首次 `Completed` 的上界：A 2.072s、B 1.865s、C 2.220s，均在 PRD §9 草案 ≤3s 内。
+- 日志：`/tmp/m3-positive-phases.log`、`/tmp/m3-p-A.log`、`/tmp/m3-p-B.log`、`/tmp/m3-p-C.log`。
+
+负例（OCR 节流后复测）：
+
+- A `static` 全程 `Idle`，从未 `Completed`；C `blink` 全程 `Idle`，从未 `Completed`。
+- B `stallAx`：spinner 停、文本冻结、只有 enabled AX Stop 按钮；4.002s stall 内始终 `Streaming`，无 `Settling`/`Completed`；stall 结束后 `Settling`（1294.280）→ `Completed`（1295.330）。
+- 更早一轮 `stall`（spinner 继续转）也保持 Streaming，但无法单独隔离 AX；`stallAx` 专门证明 AX 增强信号阻止高置信误判。
+- 日志：`/tmp/m3-negative-phases.log`（180 样本；1280.380 3×Idle → 1286.390 B Streaming → 1294.280 B Settling → 1295.330 B Completed；A/C 从未 Completed）。
+- 相位采样：0.1s；日志只含 phase 与 fixture 生命周期标签，不含正文。
+
+UI 与布局：
+
+- `/tmp/argus-m3-streaming-ui.png`：3/3 LIVE，A/B/C 均 `Streaming`，footer “State 2 sec Frame 0 sec”。
+- `/tmp/argus-m3-completed-ui.png`：A/C `Completed`，B 仍 `Settling`（截图瞬间），中间态可见。
+- `build/argus-m3-600.png` / `build/argus-m3-900.png`：深色 600×700 单列、900×700 双列，状态行不溢出。
+- `build/argus-m3-600-light.png` / `build/argus-m3-900-light.png`：浅色同尺寸复测通过；已恢复深色与 1411×923 窗口。
+
+资源：
+
+- 早期每 0.5s 无条件 OCR：3 个静态目标约 37.5% CPU。
+- 改为画面变化才 OCR + AX 1s 缓存后，空闲 `top` 约 11.7% CPU / 123MB，接近 M2 soak 的 12.3% 基线。
+- M3 活跃 OCR 期间未做完整 soak；PRD §9 的 ≤8% 属 M4 目标。
+
+踩到/已修：
+
+- macOS 27 SDK 的 `Vision.NormalizedRect` 与 `ArgusCore.NormalizedRect` 重名，App 层显式写 `ArgusCore.NormalizedRect`。
+- `CaptureFrame` 的 `CGImage` 不可变但非 Sendable，标记 `@unchecked Sendable` 以跨 actor。
+- `swift test` 默认只跑 `ArgusCoreTests`；`ArgusTests` 需 `swift test --filter ArgusTests`。
+- AX 遍历在 detached task 中返回后重新校验 capture generation/live/暂停，避免重绑窗口时把旧进程信号写进新 generation 的缓存。
+- 验收后已停止 3 个 fixture 与 Argus 测试进程；`targets.json` 移到 `/tmp/argus-m3-targets-final.json`，`/tmp/ArgusM3Fixtures` 已删除；证据日志与截图保留。
+
+留待 owner 判断：
+
+- 3 个合成 fixture bundle 是否可替代 M3 要求的“3 个应用”；真实客户端 ROI/control ROI/settle 标定是否进入 M3 或顺延到 M4。
+
+
 ## 未接线
 
-- OCR / Accessibility 控件信号 / 帧差提取（M3；AX 目前只用于窗口切换，不参与检测）。
+- 真实客户端 Target Profile：ChatGPT/Claude/Cursor 的 ROI、control ROI、settleDuration、阈值未标定；当前所有目标走 `ReplyProfile.generic`（control ROI 为空，视觉 Stop 关键词不启用）。
 - 最小化窗口的 SCStream 行为（docs/02 开放问题，M4 soak 记录）。
 - 签名、公证、DMG/ZIP 与内测分发（M5；bundle 已就绪，签名身份方案已定）。
 
 ## 下一步
 
-1. 跑 M2a / M2b / M2c 三份实机清单（上方），把结果补进本文件；AX 真实切窗必须人工授权后测。
-2. 用 `scripts/soak.sh 30` 完成 3 目标 30 分钟 soak，填 CPU/RSS 与错绑记录。
-3. M2 收口后更新 docs/06 手工矩阵与 handoff 证据，再进 M3。
+1. 提交并 push M3 代码、`Fixtures/`、`scripts/build-m3-fixtures.sh` 与文档；等 CI。
+2. 清理自建 fixture 进程与 `targets.json` 测试目标；保留 `/tmp` 证据日志和 `build/argus-m3-*.png`。
+3. 由 owner 确认：合成 fixture 是否可作 M3 退出证据；若不可，先标定至少 1 个真实客户端 Profile 再收口。
+4. M3 收口后再进 M4：4 小时 3 目标 soak、活跃 OCR CPU、隐私/脱敏检查。
 
 ## 已拍板（2026-11-21）
 
@@ -100,7 +150,8 @@
 
 ## 待拍板
 
-- 完成检测的误报/漏报阈值与可接受延迟（M3 fixture 实测后定）。
+- 合成 fixture 是否可替代 M3 要求的“3 个应用”验收；真实客户端 Profile 是否必须进 M3。
+- 完成检测的误报/漏报阈值与可接受延迟（合成 fixture 已测，真实场景待定）。
 - 多显示器 / Space 下激活优先级与行为（M2c/M4 实测，不猜）。
 - 是否走 Mac App Store；当前默认 Developer ID + 公证。
 - `one-code` 可复用模块边界与许可证。
@@ -110,10 +161,17 @@
 
 ```text
 swift build -> Build complete!
-swift test  -> 39 tests, 0 failures（ArgusCoreTests 35 + ArgusTests 4）
-               （M2a 17：7 TargetRestorer + 5 PersistedTarget/上限 + 1 卡片身份 + 4 TargetFileStore；
-                 M2b 7：WindowMatchPolicy；M2c 未新增纯逻辑单测）
-./scripts/make-app.sh -> build/Argus.app (com.bayernjf.argus, Authority=Argus Dev；修复后重新打包 2026-11-21 23:5x)
+swift test  -> ArgusCoreTests 48 tests, 0 failures
+swift test --filter ArgusTests -> 9 tests, 0 failures
+               （M3 覆盖：13 ReplyCompletionDetector + 3 ReplyProfile + 3 LumaGrid
+                 + 1 TargetPhaseTimestamp + 5 ReplySignalAnalyzer（含 AX 无权限））
+./scripts/build-m3-fixtures.sh -> build/fixtures/Apps/A-D + PhaseSampler（ad-hoc 签名，无网络）
+./scripts/make-app.sh -> build/Argus.app (com.bayernjf.argus, Authority=Argus Dev；M3 重建 2026-11-22)
+M3 正例 -> finish→Completed 上界 A 2.072s / B 1.865s / C 2.220s（/tmp/m3-positive-phases.log）
+M3 负例 -> stallAx 4.002s 内始终 Streaming；static/blink 全程 Idle；无 Completed（/tmp/m3-negative-phases.log）
+M3 UI -> /tmp/argus-m3-streaming-ui.png、/tmp/argus-m3-completed-ui.png
+M3 布局 -> build/argus-m3-600.png / -900.png / -600-light.png / -900-light.png
+M3 资源 -> 空闲约 11.7% CPU / 123MB；早期无条件 OCR 37.5%（已修）
 M2c 布局烟测 -> 3 张假 bundle 的 NEEDS WINDOW 卡片（无真实窗口，未捕获任何用户内容）：
                  600×700 单列、状态条 4 项指标完整且提示隐藏；900×700 双列、提示显示；均无横向溢出。
                  截图 build/argus-m2c-3cards-600.png / -900.png（未提交）；演示 targets.json 已删除
