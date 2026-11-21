@@ -175,11 +175,12 @@ Profile：
 
 ## M4 内部 Alpha（进行中，2026-11-22）
 
-- 3 个合成 fixture 以 `soak` 模式运行：短文本每 0.5s 变化，Stop 保持可见；目标 A/B/C 均在 `Streaming`。
-- 4h CPU/RSS 采样：`build/soak-20261122-025745.log`，每 30s 一条。
-- 初始采样（02:57–03:01）：3/3 `Streaming`，State 11s，Frame 0s；Argus 21.0–30.4% CPU / 139,232–156,816 KB；无 TCP/UDP 连接；Application Support 只有 `targets.json`。
-- 活跃 CPU 高于 PRD §9 ≤8% 目标，M4 需优化 OCR/ROI 后复测；RSS 初期从 156,816 KB 降到 139,232 KB，暂未见增长。
-- `caffeinate -dimsu -t 14700` 覆盖 4h；4h 结束前 M4 不宣称完成。
+- 首次 02:57 启动的 soak 因后台任务在轮次结束时被回收，只覆盖 02:57–03:08；已废弃，不作为 4h 证据。
+- 03:27 重启干净 4h soak：3 个合成 fixture 以 `soak` 模式运行，目标 A/B/C 均 `Streaming`；4h 采样 `build/soak-20261122-032718.log`，每 30s 记录 CPU、RSS 与 `footprint_mb`（`scripts/soak.sh` 已更新）。
+- 初始 03:27–03:28：3/3 `Streaming`，约 20.9% CPU / RSS 228–255 MB / **物理 footprint 162 MB**。
+- 之前 03:24 的 RSS 400 MB 主要是共享库页；`vmmap` 物理 footprint 142 MB、峰值 172 MB，`footprint` 142 MB，不是私有大内存增长。M4 以 footprint 为准，RSS 只作参考。
+- 无 TCP/UDP 连接；Application Support 只有 `targets.json`；`caffeinate` detached 覆盖 4h；预计 07:27 结束。
+- 4h 结束前 M4 不宣称完成；活跃 CPU 仍高于 PRD §9 ≤8% 目标，需在结果出来后优化 OCR/ROI 再复测。
 
 ## 未接线
 
