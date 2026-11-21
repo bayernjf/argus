@@ -37,6 +37,9 @@ struct DashboardView: View {
                             },
                             onActivate: {
                                 store.activateTarget(id: target.id)
+                            },
+                            onTogglePause: {
+                                store.togglePause(id: target.id)
                             }
                         )
                     }
@@ -51,7 +54,7 @@ struct DashboardView: View {
             footer
         }
         .padding(24)
-        .frame(minWidth: 900, minHeight: 600)
+        .frame(minWidth: 600, minHeight: 600)
         .background(Color(nsColor: .windowBackgroundColor))
         .sheet(isPresented: $store.isShowingPicker, onDismiss: store.pickerDidDismiss) {
             WindowPickerSheet(store: store)
@@ -99,17 +102,29 @@ struct DashboardView: View {
     }
 
     private var statusStrip: some View {
-        HStack(spacing: 18) {
-            metric("Targets", value: "\(store.targets.count)/\(TargetLimits.maximumMonitoredTargets)")
-            metric("Completed", value: "\(store.targets.filter { $0.phase == .completed }.count)")
-            metric("Streaming", value: "\(store.targets.filter { $0.phase == .streaming }.count)")
-            Spacer()
-            Text("M2b: click preview to switch · detection lands in M3")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        ViewThatFits(in: .horizontal) {
+            statusStripContent(showsHint: true)
+            statusStripContent(showsHint: false)
         }
         .padding(14)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    @ViewBuilder
+    private func statusStripContent(showsHint: Bool) -> some View {
+        HStack(spacing: 18) {
+            metric("Targets", value: "\(store.targets.count)/\(TargetLimits.maximumMonitoredTargets)")
+            metric("Paused", value: "\(store.pausedTargetIDs.count)")
+            metric("Completed", value: "\(store.targets.filter { $0.phase == .completed }.count)")
+            metric("Streaming", value: "\(store.targets.filter { $0.phase == .streaming }.count)")
+            Spacer(minLength: 12)
+            if showsHint {
+                Text("M2c: pause & auto-recover · detection lands in M3")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
     }
 
     private func activationBanner(_ notice: String) -> some View {

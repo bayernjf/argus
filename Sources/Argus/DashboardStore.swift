@@ -6,9 +6,13 @@ import Observation
 /// Per-target capture lifecycle as the cards see it. A failed capture keeps
 /// the last reason string so the card can explain itself. `unresolved` is a
 /// restored card whose window could not be bound without guessing.
+/// `windowClosed` is recoverable: a background retry waits for the window to
+/// come back (M2c).
 enum CaptureState: Equatable, Sendable {
     case connecting
     case live
+    case paused
+    case windowClosed
     case failed(String)
     case unresolved(String)
 }
@@ -64,9 +68,13 @@ final class DashboardStore {
     /// Latest captured frame per target, in memory only (docs/02: 禁止落盘).
     private(set) var latestFrames: [UUID: CGImage] = [:]
     private(set) var captureStates: [UUID: CaptureState] = [:]
+    private(set) var pausedTargetIDs: Set<UUID> = []
 
     /// Picked-window id per target (CGWindowID space, same as SCWindow.windowID).
     private var targetWindowIDs: [UUID: UInt32] = [:]
+    /// Monotonic per-target attempt token; only the newest start may attach
+    /// its stream when retries overlap (activation + picker Retry + rebuild).
+    private var captureGeneration: [UUID: Int] = [:]
     /// Target being re-bound from an unresolved card; the picker replaces it
     /// instead of adding a fourth card.
     private(set) var rebindTargetID: UUID?
@@ -87,6 +95,7 @@ final class DashboardStore {
     private let makeSession: CaptureSessionFactory
     private let files: TargetFileStore
     private var noticeTask: Task<Void, Never>?
+    private var rebuildTask: Task<Void, Never>?
     private var sessions: [UUID: CaptureSource] = [:]
     private let pollTaskBox = PollTaskBox()
 
@@ -170,6 +179,9 @@ final class DashboardStore {
         switch captureStates[id] {
         case .unresolved:
             showActivationNotice("No window is bound to this card. Re-select it first.")
+            return
+        case .windowClosed:
+            showActivationNotice("This window is closed. Re-select it or wait for it to come back.")
             return
         case .failed(let reason):
             showActivationNotice("Capture is down (\(reason)). Re-select or remove this target.")
@@ -309,6 +321,8 @@ final class DashboardStore {
     func removeTarget(id: UUID) {
         targets.removeAll { $0.id == id }
         targetWindowIDs.removeValue(forKey: id)
+        captureGeneration.removeValue(forKey: id)
+        pausedTargetIDs.remove(id)
         if let session = sessions.removeValue(forKey: id) {
             session.stop()
         }
@@ -322,6 +336,82 @@ final class DashboardStore {
             pollTaskBox.cancel()
         }
         persistTargets()
+    }
+
+    // MARK: Pause / resume
+
+    func togglePause(id: UUID) {
+        if pausedTargetIDs.contains(id) {
+            resumeTarget(id: id)
+        } else {
+            pauseTarget(id: id)
+        }
+    }
+
+    /// Stopping the stream keeps the last frame only as a labelled snapshot;
+    /// no new frames arrive while paused (FR-07).
+    func pauseTarget(id: UUID) {
+        guard !pausedTargetIDs.contains(id) else { return }
+        switch captureStates[id] {
+        case .unresolved, .paused, .none:
+            return
+        default:
+            break
+        }
+        pausedTargetIDs.insert(id)
+        if let session = sessions.removeValue(forKey: id) {
+            session.stop()
+        }
+        captureStates[id] = .paused
+        if sessions.isEmpty {
+            pollTaskBox.cancel()
+        }
+    }
+
+    /// Resumes against the bound window when it still exists; otherwise the
+    /// same strict restore rule tries to find a unique replacement window.
+    func resumeTarget(id: UUID) {
+        guard pausedTargetIDs.contains(id),
+              let target = targets.first(where: { $0.id == id })
+        else { return }
+        pausedTargetIDs.remove(id)
+        captureStates[id] = .connecting
+        Task { await resumeCapture(target) }
+    }
+
+    private func resumeCapture(_ target: TargetApplication) async {
+        guard targets.contains(where: { $0.id == target.id }),
+              !pausedTargetIDs.contains(target.id)
+        else { return }
+        do {
+            let windows = try await WindowEnumerator.enumerateWindows()
+            // The user can pause, remove or re-bind while enumeration is in
+            // flight; a stale resume must not resurrect or restart a card.
+            guard targets.contains(where: { $0.id == target.id }),
+                  !pausedTargetIDs.contains(target.id)
+            else { return }
+            if let boundID = targetWindowIDs[target.id],
+               let window = windows.first(where: { $0.id == boundID }) {
+                startCapture(for: target, window: window)
+                return
+            }
+            let candidates = CaptureWindowInfo.excludingMonitored(
+                windows,
+                monitoredWindowIDs: Set(targetWindowIDs.values)
+            )
+            switch TargetRestorer.restore([PersistedTarget(target: target)], against: candidates).outcomes.first {
+            case .restored(let restored):
+                markRestored(restored)
+            default:
+                captureStates[target.id] = .windowClosed
+                ensureRebuildLoop()
+            }
+        } catch {
+            guard targets.contains(where: { $0.id == target.id }),
+                  !pausedTargetIDs.contains(target.id)
+            else { return }
+            captureStates[target.id] = .failed(error.localizedDescription)
+        }
     }
 
     // MARK: Restore
@@ -459,15 +549,42 @@ final class DashboardStore {
     // MARK: Capture sessions
 
     private func startCapture(for target: TargetApplication, window: CaptureWindowInfo) {
+        // A retry path can fire twice from different triggers (activation
+        // notification and picker Retry); keep only the newest stream.
+        if let existing = sessions.removeValue(forKey: target.id) {
+            existing.stop()
+        }
+        let generation = (captureGeneration[target.id] ?? 0) + 1
+        captureGeneration[target.id] = generation
         captureStates[target.id] = .connecting
         ensureFramePolling()
         Task {
+            var pendingSession: (any CaptureSource)?
             do {
                 let session = try await makeSession(target.id, window)
+                pendingSession = session
                 try await session.start()
+                // The user may have paused, removed or re-bound the card
+                // while the stream was starting; never attach a stale one.
+                guard targets.contains(where: { $0.id == target.id }),
+                      targetWindowIDs[target.id] == window.id,
+                      captureGeneration[target.id] == generation,
+                      !pausedTargetIDs.contains(target.id)
+                else {
+                    session.stop()
+                    return
+                }
                 sessions[target.id] = session
                 captureStates[target.id] = .live
             } catch {
+                // A failed start must release the half-built SCStream; the
+                // session is not in `sessions`, so nobody else can stop it.
+                pendingSession?.stop()
+                // Pausing while the stream was starting must leave the card
+                // PAUSED, not flip it to CAPTURE ERROR.
+                guard targets.contains(where: { $0.id == target.id }),
+                      !pausedTargetIDs.contains(target.id)
+                else { return }
                 captureStates[target.id] = .failed(describeCaptureError(error))
             }
         }
@@ -491,6 +608,7 @@ final class DashboardStore {
         // three targets at 4 Hz used to mean 12 full CGWindowList copies a
         // second (M2a fix).
         let existingWindowIDs = sessions.isEmpty ? Set<UInt32>() : currentWindowIDs()
+        var windowClosed = false
         for (id, session) in sessions {
             if session.isFailed {
                 captureStates[id] = .failed(session.failureMessage ?? "Capture failed")
@@ -503,7 +621,8 @@ final class DashboardStore {
             // The .optionAll list still contains minimized windows, so a
             // minimized target is not mistaken for a closed one.
             if let windowID = targetWindowIDs[id], !existingWindowIDs.contains(windowID) {
-                captureStates[id] = .failed("Window closed")
+                captureStates[id] = .windowClosed
+                windowClosed = true
                 deadIDs.append(id)
                 continue
             }
@@ -515,6 +634,57 @@ final class DashboardStore {
         }
         for id in deadIDs {
             sessions.removeValue(forKey: id)?.stop()
+        }
+        if windowClosed {
+            ensureRebuildLoop()
+        }
+    }
+
+    /// Recoverable window-close path: retry a strict unique-window bind every
+    /// 10 seconds while any card is waiting, and stop when none are left.
+    private func ensureRebuildLoop() {
+        guard rebuildTask == nil else { return }
+        rebuildTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                guard let self, !Task.isCancelled else { return }
+                let stillWaiting = await self.rebuildClosedWindows()
+                if !stillWaiting { break }
+            }
+            self?.rebuildTask = nil
+        }
+    }
+
+    private func rebuildClosedWindows() async -> Bool {
+        let waiting = targets.filter {
+            captureStates[$0.id] == .windowClosed && !pausedTargetIDs.contains($0.id)
+        }
+        guard !waiting.isEmpty else { return false }
+        guard permissionState == .granted else { return true }
+
+        do {
+            let windows = try await WindowEnumerator.enumerateWindows()
+            for target in waiting {
+                // The list may be stale after an await; re-check before acting.
+                guard captureStates[target.id] == .windowClosed,
+                      !pausedTargetIDs.contains(target.id)
+                else { continue }
+                let candidates = CaptureWindowInfo.excludingMonitored(
+                    windows,
+                    monitoredWindowIDs: Set(targetWindowIDs.values)
+                )
+                switch TargetRestorer.restore([PersistedTarget(target: target)], against: candidates).outcomes.first {
+                case .restored(let restored):
+                    markRestored(restored)
+                default:
+                    break
+                }
+            }
+        } catch {
+            // Keep waiting; the next tick retries.
+        }
+        return targets.contains {
+            captureStates[$0.id] == .windowClosed && !pausedTargetIDs.contains($0.id)
         }
     }
 

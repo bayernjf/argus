@@ -9,6 +9,7 @@ struct MonitoringCardView: View {
     var onRemove: (() -> Void)?
     var onReselect: (() -> Void)?
     var onActivate: (() -> Void)?
+    var onTogglePause: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -30,6 +31,16 @@ struct MonitoringCardView: View {
             if case .unresolved = captureState {
                 Button("Re-select window…") {
                     onReselect?()
+                }
+            }
+            if case .windowClosed = captureState {
+                Button("Re-select window…") {
+                    onReselect?()
+                }
+            }
+            if canTogglePause {
+                Button(isPaused ? "Resume capture" : "Pause capture") {
+                    onTogglePause?()
                 }
             }
             Button("Remove target", role: .destructive) {
@@ -101,6 +112,8 @@ struct MonitoringCardView: View {
         case .connecting: "CONNECTING…"
         case .failed: "CAPTURE ERROR"
         case .unresolved: "NEEDS WINDOW"
+        case .paused: "PAUSED"
+        case .windowClosed: "WINDOW CLOSED"
         case nil: "NO SESSION"
         }
     }
@@ -109,6 +122,8 @@ struct MonitoringCardView: View {
         switch captureState {
         case .failed: .red
         case .unresolved: .orange
+        case .windowClosed: .red
+        case .paused: .secondary
         default: Color.primary.opacity(0.55)
         }
     }
@@ -119,6 +134,8 @@ struct MonitoringCardView: View {
         case .connecting: .orange
         case .failed: .red
         case .unresolved: .orange
+        case .windowClosed: .red
+        case .paused: .gray
         case nil: target.phase.tint
         }
     }
@@ -133,6 +150,18 @@ struct MonitoringCardView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else if case .unresolved(let reason) = captureState {
             Text(reason)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.orange)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else if case .paused = captureState {
+            Text("Paused · last frame kept in memory")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else if case .windowClosed = captureState {
+            Text("Waiting for this window to return…")
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.orange)
                 .lineLimit(2)
@@ -155,9 +184,55 @@ struct MonitoringCardView: View {
             Text(target.displayName)
                 .font(.headline)
             Spacer()
-            Text(target.phase.label)
+            Text(statusLabel)
                 .font(.caption.weight(.medium))
-                .foregroundStyle(target.phase.tint)
+                .foregroundStyle(statusTint)
+        }
+    }
+
+    /// Capture state outranks the (M3) reply phase here: a paused or closed
+    /// card must not keep saying "Idle" as if frames were still arriving.
+    private var statusLabel: String {
+        switch captureState {
+        case .paused: "Paused"
+        case .windowClosed: "Window closed"
+        case .unresolved: "Needs window"
+        case .failed: "Capture error"
+        case .connecting: "Connecting"
+        case .live, nil: target.phase.label
+        }
+    }
+
+    private var statusTint: Color {
+        switch captureState {
+        case .paused: .secondary
+        case .windowClosed, .failed: .red
+        case .unresolved: .orange
+        case .connecting: .orange
+        case .live, nil: target.phase.tint
+        }
+    }
+
+    private var statusDetail: String {
+        switch captureState {
+        case .paused: "No new frames until you resume"
+        case .windowClosed: "Waiting for the window to return"
+        case .unresolved: "Bind a window to resume capture"
+        case .failed: "Capture stopped"
+        case .connecting: "Starting the stream"
+        case .live, nil: target.phase.detail
+        }
+    }
+
+    private var isPaused: Bool {
+        if case .paused = captureState { return true }
+        return false
+    }
+
+    private var canTogglePause: Bool {
+        switch captureState {
+        case .live, .connecting, .paused: true
+        default: false
         }
     }
 
@@ -175,11 +250,20 @@ struct MonitoringCardView: View {
         }
 
         HStack {
-            Text(target.phase.detail)
+            Text(statusDetail)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer()
+            if canTogglePause {
+                Button {
+                    onTogglePause?()
+                } label: {
+                    Image(systemName: isPaused ? "play.fill" : "pause.fill")
+                }
+                .buttonStyle(.borderless)
+                .help(isPaused ? "Resume capture" : "Pause capture")
+            }
             if let lastFrameAt = target.lastFrameAt {
                 Text(lastFrameAt, style: .relative)
                     .font(.caption2.monospacedDigit())
