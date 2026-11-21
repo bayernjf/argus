@@ -51,6 +51,9 @@ private final class PollTaskBox: @unchecked Sendable {
 final class DashboardStore {
     private(set) var targets: [TargetApplication] = []
     private(set) var permissionState: CapturePermissionState = .notDetermined
+    private(set) var accessibilityState: AccessibilityPermissionState = .notDetermined
+    /// Ephemeral explanation for a degraded or failed window switch.
+    private(set) var activationNotice: String?
     private(set) var availableWindows: [CaptureWindowInfo] = []
     /// Eligible windows before excluding monitored ones; lets the picker
     /// distinguish "nothing on screen" from "everything is monitored".
@@ -79,8 +82,11 @@ final class DashboardStore {
     }
 
     private let permission: CapturePermissionProviding
+    private let accessibility: AccessibilityPermissionProviding
+    private let activateWindow: WindowActivating
     private let makeSession: CaptureSessionFactory
     private let files: TargetFileStore
+    private var noticeTask: Task<Void, Never>?
     private var sessions: [UUID: CaptureSource] = [:]
     private let pollTaskBox = PollTaskBox()
 
@@ -91,6 +97,8 @@ final class DashboardStore {
 
     init(
         permission: CapturePermissionProviding = PermissionManager(),
+        accessibility: AccessibilityPermissionProviding = AccessibilityPermissionManager(),
+        activator: WindowActivating = AccessibilityWindowActivator(),
         initialTargets: [TargetApplication] = [],
         files: TargetFileStore = TargetFileStore(),
         captureFactory: @escaping CaptureSessionFactory = { targetID, window in
@@ -98,6 +106,8 @@ final class DashboardStore {
         }
     ) {
         self.permission = permission
+        self.accessibility = accessibility
+        self.activateWindow = activator
         self.targets = initialTargets
         self.files = files
         self.makeSession = captureFactory
@@ -120,6 +130,7 @@ final class DashboardStore {
     @objc private func appDidBecomeActive() {
         Task {
             await refreshPermission()
+            await refreshAccessibility()
             // Returning from System Settings is the main way Screen
             // Recording gets granted (macOS 27 shows no prompt), so retry
             // any unresolved restored cards instead of making the user
@@ -132,6 +143,86 @@ final class DashboardStore {
 
     func refreshPermission() async {
         permissionState = await permission.currentState()
+    }
+
+    func refreshAccessibility() async {
+        accessibilityState = await accessibility.currentState()
+    }
+
+    /// User-initiated from the status strip. The prompt explains the purpose
+    /// in its own text, and a denial lands on the System Settings pane.
+    func requestAccessibility() async {
+        accessibilityState = await accessibility.requestAccess()
+        if accessibilityState != .granted {
+            openAccessibilitySettings()
+        }
+    }
+
+    // MARK: Window switching
+
+    /// Raises the exact target window (M2b). Failures are explained in the
+    /// dashboard, never silently swallowed.
+    func activateTarget(id: UUID) {
+        guard let target = targets.first(where: { $0.id == id }) else { return }
+        // A card without a bound window must not fall through to "raise the
+        // app's only window": that is exactly the wrong-window guess ADR-012
+        // forbids.
+        switch captureStates[id] {
+        case .unresolved:
+            showActivationNotice("No window is bound to this card. Re-select it first.")
+            return
+        case .failed(let reason):
+            showActivationNotice("Capture is down (\(reason)). Re-select or remove this target.")
+            return
+        default:
+            break
+        }
+        do {
+            switch try activateWindow.activate(target) {
+            case .exactWindow:
+                clearActivationNotice()
+            case .applicationOnly(.accessibilityNotGranted):
+                showActivationNotice(
+                    "Brought \(target.displayName) to the front. Grant Accessibility to raise the exact window."
+                )
+            }
+        } catch {
+            showActivationNotice(describeActivationError(error, target: target))
+        }
+    }
+
+    func clearActivationNotice() {
+        noticeTask?.cancel()
+        noticeTask = nil
+        activationNotice = nil
+    }
+
+    private func showActivationNotice(_ text: String) {
+        activationNotice = text
+        noticeTask?.cancel()
+        noticeTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.activationNotice = nil
+        }
+    }
+
+    private func describeActivationError(_ error: Error, target: TargetApplication) -> String {
+        switch error {
+        case WindowActivationError.targetNotRunning:
+            return "\(target.displayName) is not running."
+        case WindowActivationError.windowNotFound:
+            return "Couldn't identify the window for \(target.displayName). Re-select the card or bring its window on screen."
+        case WindowActivationError.ambiguousWindows(let count):
+            return "\(count) windows of \(target.displayName) match. Close the duplicates or re-select the card."
+        default:
+            return error.localizedDescription
+        }
+    }
+
+    func openAccessibilitySettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+        NSWorkspace.shared.open(url)
     }
 
     /// Opens the picker flow from the Add-target button: request the prompt

@@ -18,6 +18,10 @@ struct DashboardView: View {
             header
             statusStrip
 
+            if let notice = store.activationNotice {
+                activationBanner(notice)
+            }
+
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 16) {
                     ForEach(store.targets) { target in
@@ -30,6 +34,9 @@ struct DashboardView: View {
                             },
                             onReselect: {
                                 store.beginRebind(targetID: target.id)
+                            },
+                            onActivate: {
+                                store.activateTarget(id: target.id)
                             }
                         )
                     }
@@ -51,6 +58,7 @@ struct DashboardView: View {
         }
         .task {
             await store.refreshPermission()
+            await store.refreshAccessibility()
             await store.restorePersistedTargets()
         }
     }
@@ -67,6 +75,16 @@ struct DashboardView: View {
             }
 
             Spacer()
+
+            if store.accessibilityState != .granted {
+                Button {
+                    Task { await store.requestAccessibility() }
+                } label: {
+                    Label("Enable exact switching", systemImage: "hand.raised")
+                }
+                .controlSize(.small)
+                .help("Accessibility permission lets Argus raise the exact window instead of only bringing the app forward.")
+            }
 
             Button {
                 store.openPicker()
@@ -86,12 +104,29 @@ struct DashboardView: View {
             metric("Completed", value: "\(store.targets.filter { $0.phase == .completed }.count)")
             metric("Streaming", value: "\(store.targets.filter { $0.phase == .streaming }.count)")
             Spacer()
-            Text("M2a: persisted targets · click-to-switch lands in M2b")
+            Text("M2b: click preview to switch · detection lands in M3")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .padding(14)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func activationBanner(_ notice: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "info.circle")
+                .foregroundStyle(.secondary)
+            Text(notice)
+                .font(.callout)
+            Spacer()
+            Button("Dismiss") {
+                store.clearActivationNotice()
+            }
+            .buttonStyle(.plain)
+            .font(.caption)
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
     }
 
     private var emptyHint: some View {

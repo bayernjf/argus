@@ -8,6 +8,7 @@ struct MonitoringCardView: View {
     var captureState: CaptureState?
     var onRemove: (() -> Void)?
     var onReselect: (() -> Void)?
+    var onActivate: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -64,6 +65,11 @@ struct MonitoringCardView: View {
         .frame(height: 150)
         .frame(maxWidth: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .contentShape(RoundedRectangle(cornerRadius: 10))
+        .onTapGesture {
+            onActivate?()
+        }
+        .help("Bring this window to the front")
         .overlay(alignment: .top) {
             HStack {
                 Text(badgeText)
@@ -85,7 +91,8 @@ struct MonitoringCardView: View {
             .padding(.horizontal, 10)
             .padding(.bottom, 6)
         }
-        .accessibilityLabel("\(target.displayName) preview")
+        .accessibilityLabel("Switch to \(target.displayName) window")
+        .accessibilityAddTraits(.isButton)
     }
 
     private var badgeText: String {
@@ -131,12 +138,12 @@ struct MonitoringCardView: View {
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else if frameImage != nil {
-            Text("Frames stay in memory · nothing on disk")
+            Text("Frames stay in memory · click to switch")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            Text("Click thumbnail to switch in M2")
+            Text("Click the preview to bring this window forward")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
