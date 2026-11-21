@@ -58,7 +58,7 @@ struct MonitoringCardView: View {
                     Text(badgeText)
                         .font(.caption2.weight(.bold))
                         .tracking(1)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(badgeTint)
                     Spacer()
                     Circle()
                         .fill(dotTint)
@@ -76,10 +76,17 @@ struct MonitoringCardView: View {
 
     private var badgeText: String {
         switch captureState {
-        case .live: "LIVE · 1 FPS"
+        case .live: "LIVE · 2 FPS"
         case .connecting: "CONNECTING…"
         case .failed: "CAPTURE ERROR"
         case nil: "CAPTURE PENDING · M1C"
+        }
+    }
+
+    private var badgeTint: Color {
+        switch captureState {
+        case .failed: .red
+        default: Color.primary.opacity(0.55)
         }
     }
 
@@ -96,7 +103,7 @@ struct MonitoringCardView: View {
     private var bottomCaption: some View {
         if case .failed(let reason) = captureState {
             Text(reason)
-                .font(.caption2)
+                .font(.caption2.weight(.medium))
                 .foregroundStyle(.orange)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
