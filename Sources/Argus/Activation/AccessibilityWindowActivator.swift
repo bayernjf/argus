@@ -9,29 +9,44 @@ import ArgusCore
 /// user in a different conversation.
 @MainActor
 final class AccessibilityWindowActivator: WindowActivating {
+    private struct Candidate {
+        let app: NSRunningApplication
+        let window: AXUIElement
+        let title: String
+    }
+
     func activate(_ target: TargetApplication) throws -> WindowActivationOutcome {
-        guard let running = NSWorkspace.shared.runningApplications.first(where: {
-            $0.bundleIdentifier == target.bundleIdentifier
-        }) else {
+        let running = NSWorkspace.shared.runningApplications.filter {
+            $0.bundleIdentifier == target.bundleIdentifier && !$0.isTerminated
+        }
+        guard let fallbackApp = running.first else {
             throw WindowActivationError.targetNotRunning
         }
 
         guard AXIsProcessTrusted() else {
-            bringApplicationForward(running)
+            bringApplicationForward(fallbackApp)
             return .applicationOnly(.accessibilityNotGranted)
         }
 
-        let appElement = AXUIElementCreateApplication(running.processIdentifier)
-        let windows = copyWindows(of: appElement)
-        let titles = windows.map(windowTitle(of:))
+        // One bundle can have several live processes (e.g. `open -n`). Collect
+        // windows across all of them: activating only the first process could
+        // raise a window from an instance the target was never bound to.
+        let candidates = running.flatMap { app -> [Candidate] in
+            let element = AXUIElementCreateApplication(app.processIdentifier)
+            return copyWindows(of: element).map { window in
+                Candidate(app: app, window: window, title: windowTitle(of: window))
+            }
+        }
+        let titles = candidates.map(\.title)
 
         switch WindowMatchPolicy.match(targetTitle: target.windowTitle, candidateTitles: titles) {
         case .unique(let index):
-            guard windows.indices.contains(index) else {
+            guard candidates.indices.contains(index) else {
                 throw WindowActivationError.windowNotFound
             }
-            bringApplicationForward(running)
-            raise(windows[index])
+            let candidate = candidates[index]
+            bringApplicationForward(candidate.app)
+            raise(candidate.window)
             return .exactWindow
         case .ambiguous(let count):
             throw WindowActivationError.ambiguousWindows(count: count)
