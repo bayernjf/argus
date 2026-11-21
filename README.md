@@ -6,7 +6,7 @@ Argus 把多个目标软件窗口收进一个 Dashboard：每个目标软件一�
 
 - 产品名：Argus（内部定名，2026-11-21）
 - Tier：Tier 2（一般项目）
-- 当前阶段：M3 进行中（M1/M2 已实机验收并合入 `main`；M3 核心与合成 fixture 已完成，真实客户端 Profile 待标定）
+- 当前阶段：M3 已完成（M1/M2 已实机验收；M3 验收口径为合成 fixture + 豆包工作真实视觉链路；AX 增强与其余客户端标定延后 M4）
 - 仓库：https://github.com/bayernjf/argus
 
 ## 当前状态
@@ -14,9 +14,9 @@ Argus 把多个目标软件窗口收进一个 Dashboard：每个目标软件一�
 - `ArgusCore` 已建立回复状态模型、`ReplyCompletionDetector` 状态机、窗口过滤、目标持久化与恢复逻辑。
 - M1 已实机验收：`.app` bundle、屏幕录制权限引导、真实窗口枚举、单窗口 2 fps 捕获、内存缩略图、窗口关闭失败态。
 - M2 已实机验收：目标持久化与严格不猜恢复、3 目标上限、点击缩略图 AX 精确切窗、暂停/恢复冻结最后一帧、窗口关闭 10 秒重建、600/900 深浅色；3 目标 30 分钟 soak 全程 LIVE。
-- M3 已落码：视觉帧差 + Vision OCR 文本哈希 + 可选 AX Stop 控件；每目标 `ReplyProfile` 参数；Dashboard 显示 `Streaming / Settling / Completed / Unknown` 与最近状态时间。
-- M3 合成 fixture 正/负验收通过：正例完成上界 1.865–2.220s；`stallAx` 4s 内保持 Streaming；`static`/`blink` 不误报 Completed。真实客户端 Profile 未标定。
-- `swift build` 通过；`swift test` 57 tests / 0 failures（48 ArgusCoreTests + 9 ArgusTests）。
+- M3 已完成：视觉帧差 + Vision OCR 文本哈希 + 可选 AX Stop 控件；每目标 `ReplyProfile` 参数；豆包工作视觉 Profile 已接入；Dashboard 显示 `Streaming / Settling / Completed / Unknown` 与最近状态时间。
+- M3 合成 fixture 正/负验收通过：正例完成上界 1.865–2.220s；`stallAx` 4s 内保持 Streaming；`static`/`blink` 不误报 Completed。豆包工作真实视觉链路通过：Settling→Completed 1.07s，静态 11.9s Idle；AX 增强与 ChatGPT/Claude/Cursor 标定延后 M4。
+- `swift build` 通过；`swift test` 59 tests / 0 failures（48 ArgusCoreTests + 11 ArgusTests）。
 
 ## 文档
 
@@ -74,11 +74,12 @@ argus/
 ```text
 swift build  -> Build complete
 swift test   -> ArgusCoreTests 48 tests, 0 failures
-swift test --filter ArgusTests -> 9 tests, 0 failures
+swift test --filter ArgusTests -> 11 tests, 0 failures
 ./scripts/build-m3-fixtures.sh -> build/fixtures/Apps/A-D + PhaseSampler
 ./scripts/make-app.sh -> build/Argus.app (com.bayernjf.argus, Authority=Argus Dev)
 M3 正例 -> finish→Completed 上界 A 2.072s / B 1.865s / C 2.220s
 M3 负例 -> stallAx 4.002s 内始终 Streaming；static/blink 全程 Idle
+M3 豆包工作 -> Settling→Completed 1.07s；静态 11.9s 全程 Idle
 ```
 
-M1/M2 已实机验收，证据见 [handoff.md](handoff.md)。M3 的合成 fixture 已实测，但真实客户端 Profile 未标定，因此 M3 仍为进行中。涉及权限、目标窗口和人工观察的结论必须另附记录，不用 mock 测试代替。
+M1/M2/M3 已实机验收，证据见 [handoff.md](handoff.md)。M3 的验收口径是“合成 fixture + 豆包工作真实视觉链路”；AX 增强与 ChatGPT/Claude/Cursor 标定延后 M4。涉及权限、目标窗口和人工观察的结论必须另附记录，不用 mock 测试代替。
