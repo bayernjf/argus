@@ -30,6 +30,7 @@ Argus 把多个目标软件窗口收进一个 Dashboard：每个目标软件一�
 | [docs/06-测试与验收策略.md](docs/06-测试与验收策略.md) | 单元、集成、手工矩阵与门禁 |
 | [docs/07-发布与分发.md](docs/07-发布与分发.md) | 内测、签名、公证与分发边界 |
 | [docs/08-风险与开放问题.md](docs/08-风险与开放问题.md) | 误判、权限、性能与待拍板项 |
+| [docs/09-立项与能力迁移.md](docs/09-立项与能力迁移.md) | 立项背景、能力迁移与启动条件 |
 | [handoff.md](handoff.md) | 当前交接状态与下一步 |
 
 ## 快速开始
@@ -65,11 +66,12 @@ argus/
 
 ## 验证
 
-当前 M0 证据：
+当前 M1 代码证据：
 
 ```text
 swift build  -> Build complete
-swift test   -> Executed 7 tests, 0 failures
+swift test   -> Executed 13 tests, 0 failures
+./scripts/make-app.sh -> build/Argus.app signed by Argus Dev
 ```
 
-涉及真实捕获的验收必须另附屏幕录制权限、目标窗口和人工观察记录，不用 mock 测试代替。
+真实捕获仍以实机验收为准；涉及权限、目标窗口和人工观察的结论必须另附记录，不用 mock 测试代替。
