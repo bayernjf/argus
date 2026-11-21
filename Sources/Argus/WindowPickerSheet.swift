@@ -104,12 +104,16 @@ Argus reads the pixels of the windows you explicitly pick, locally, to detect re
                 .padding(.vertical, 40)
             } else if store.availableWindows.isEmpty {
                 VStack(spacing: 6) {
-                    Image(systemName: "rectangle.dashed")
+                    Image(systemName: store.eligibleWindowCount > 0 ? "checkmark.seal" : "rectangle.dashed")
                         .font(.system(size: 24, weight: .light))
                         .foregroundStyle(.secondary)
-                    Text("No eligible on-screen windows")
+                    Text(store.eligibleWindowCount > 0
+                         ? "All eligible windows are already monitored"
+                         : "No eligible on-screen windows")
                         .foregroundStyle(.secondary)
-                    Text("Open the target app and make sure its window is on screen, then refresh.")
+                    Text(store.eligibleWindowCount > 0
+                         ? "Remove a target if you want to re-pick its window."
+                         : "Open the target app and make sure its window is on screen, then refresh.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

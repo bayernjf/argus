@@ -49,6 +49,9 @@ final class DashboardStore {
     private(set) var targets: [TargetApplication] = []
     private(set) var permissionState: CapturePermissionState = .notDetermined
     private(set) var availableWindows: [CaptureWindowInfo] = []
+    /// Eligible windows before excluding monitored ones; lets the picker
+    /// distinguish "nothing on screen" from "everything is monitored".
+    private(set) var eligibleWindowCount = 0
     private(set) var isEnumerating = false
     private(set) var enumerationError: String?
 
@@ -131,15 +134,24 @@ final class DashboardStore {
         isEnumerating = true
         defer { isEnumerating = false }
         do {
-            availableWindows = try await WindowEnumerator.enumerateWindows()
+            let all = try await WindowEnumerator.enumerateWindows()
+            eligibleWindowCount = all.count
+            // Windows already being monitored disappear from the picker;
+            // removing a target brings them back on the next enumeration.
+            let monitored = Set(targetWindowIDs.values)
+            availableWindows = CaptureWindowInfo.excludingMonitored(all, monitoredWindowIDs: monitored)
             enumerationError = nil
         } catch {
             availableWindows = []
+            eligibleWindowCount = 0
             enumerationError = error.localizedDescription
         }
     }
 
     func addTarget(_ window: CaptureWindowInfo) {
+        // The picker filters already-monitored windows, but a stale sheet
+        // could still offer one; a duplicate target would double-capture.
+        guard !targetWindowIDs.values.contains(window.id) else { return }
         let target = window.makeTarget()
         targets.append(target)
         targetWindowIDs[target.id] = window.id

@@ -61,4 +61,18 @@ final class CaptureWindowInfoTests: XCTestCase {
         let source = window()
         XCTAssertNotEqual(source.makeTarget().id, source.makeTarget().id)
     }
+
+    func testExcludingMonitoredDropsPickedWindows() {
+        let windows = [window(id: 1), window(id: 2)]
+        let result = CaptureWindowInfo.excludingMonitored(windows, monitoredWindowIDs: [2])
+        XCTAssertEqual(result.map(\.id), [1])
+    }
+
+    func testExcludingMonitoredKeepsEverythingWhenNothingPicked() {
+        let windows = [window(id: 1), window(id: 2)]
+        XCTAssertEqual(
+            CaptureWindowInfo.excludingMonitored(windows, monitoredWindowIDs: []).count,
+            2
+        )
+    }
 }

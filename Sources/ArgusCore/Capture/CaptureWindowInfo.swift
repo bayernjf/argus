@@ -55,4 +55,13 @@ public extension CaptureWindowInfo {
             note: "window #\(id)"
         )
     }
+
+    /// Drops windows that are already monitored so the picker can neither
+    /// list nor re-add a live target.
+    static func excludingMonitored(
+        _ windows: [CaptureWindowInfo],
+        monitoredWindowIDs: Set<UInt32>
+    ) -> [CaptureWindowInfo] {
+        windows.filter { !monitoredWindowIDs.contains($0.id) }
+    }
 }
