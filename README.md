@@ -6,7 +6,7 @@ Argus 把多个目标软件窗口收进一个 Dashboard：每个目标软件一�
 
 - 产品名：Argus（内部定名，2026-11-21）
 - Tier：Tier 2（一般项目）
-- 当前阶段：M2 进行中（M1 已实机验收；M2a 持久化完成、待实机验收）
+- 当前阶段：M2 进行中（M1 已实机验收；M2a/M2b 完成、待实机验收）
 - 仓库：https://github.com/bayernjf/argus
 
 ## 当前状态
@@ -14,8 +14,9 @@ Argus 把多个目标软件窗口收进一个 Dashboard：每个目标软件一�
 - `ArgusCore` 已建立回复状态模型、`ReplyCompletionDetector` 状态机、窗口过滤、目标持久化与恢复逻辑。
 - M1 已实机验收：`.app` bundle、屏幕录制权限引导、真实窗口枚举、单窗口 2 fps 捕获、内存缩略图、窗口关闭失败态。
 - M2a 已落码待验收：目标列表持久化（版本化、原子写、损坏隔离）、重启严格不猜恢复、3 目标上限、`NEEDS WINDOW` 重选路径。
-- `swift build` 通过；`swift test` 32 tests / 0 failures。
-- 点击切窗（M2b）、暂停/恢复与自动重建（M2c）、OCR/辅助功能信号（M3）尚未接线。
+- M2b 已落码待验收：点击缩略图切窗、AX 标题匹配、先匹配后激活、辅助功能权限显式引导、失败/降级 banner。
+- `swift build` 通过；`swift test` 39 tests / 0 failures。
+- 暂停/恢复与自动重建（M2c）、OCR/帧差信号（M3）尚未接线。
 
 ## 文档
 
@@ -49,8 +50,8 @@ swift run Argus
 argus/
 ├── Package.swift
 ├── Sources/
-│   ├── ArgusCore/          # 纯模型、捕获协议、持久化与恢复逻辑、回复状态机
-│   └── Argus/              # SwiftUI、ScreenCaptureKit、权限与文件存储
+│   ├── ArgusCore/          # 纯模型、捕获/激活协议、匹配与恢复逻辑、回复状态机
+│   └── Argus/              # SwiftUI、ScreenCaptureKit、Accessibility、权限与文件存储
 ├── Tests/ArgusCoreTests/   # 状态机、窗口过滤、持久化与恢复回归测试
 ├── scripts/make-app.sh     # 组装并签名 build/Argus.app
 └── docs/                   # PRD、架构、里程碑、功能点、ADR、测试与发布
@@ -71,8 +72,8 @@ argus/
 
 ```text
 swift build  -> Build complete
-swift test   -> ArgusCoreTests 28 + ArgusTests 4 = 32 tests, 0 failures
+swift test   -> ArgusCoreTests 35 + ArgusTests 4 = 39 tests, 0 failures
 ./scripts/make-app.sh -> build/Argus.app (com.bayernjf.argus, Authority=Argus Dev)
 ```
 
-M1 已实机验收；M2a 的实机验收清单见 [handoff.md](handoff.md)，通过前不标 verified。涉及权限、目标窗口和人工观察的结论必须另附记录，不用 mock 测试代替。
+M1 已实机验收；M2a/M2b 的实机验收清单见 [handoff.md](handoff.md)，通过前不标 verified。涉及权限、目标窗口和人工观察的结论必须另附记录，不用 mock 测试代替。
