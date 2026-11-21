@@ -44,33 +44,41 @@ struct MonitoringCardView: View {
                 )
 
             if let frameImage {
+                // scaledToFit, not Fill: a monitoring thumbnail must show the
+                // whole window; center-cropping hid the reply area entirely.
                 Image(decorative: frameImage, scale: 2.0, orientation: .up)
                     .resizable()
-                    .scaledToFill()
+                    .scaledToFit()
             } else {
                 Image(systemName: "macwindow")
                     .font(.system(size: 26, weight: .light))
                     .foregroundStyle(.secondary)
             }
-
-            VStack {
-                HStack {
-                    Text(badgeText)
-                        .font(.caption2.weight(.bold))
-                        .tracking(1)
-                        .foregroundStyle(badgeTint)
-                    Spacer()
-                    Circle()
-                        .fill(dotTint)
-                        .frame(width: 7, height: 7)
-                }
-                Spacer()
-                bottomCaption
-            }
-            .padding(10)
         }
         .frame(height: 150)
+        .frame(maxWidth: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(alignment: .top) {
+            HStack {
+                Text(badgeText)
+                    .font(.caption2.weight(.bold))
+                    .tracking(1)
+                    .foregroundStyle(badgeTint)
+                Spacer()
+                Circle()
+                    .fill(dotTint)
+                    .frame(width: 7, height: 7)
+            }
+            .padding(.horizontal, 10)
+            .padding(.top, 6)
+        }
+        .overlay(alignment: .bottom) {
+            HStack {
+                bottomCaption
+            }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 6)
+        }
         .accessibilityLabel("\(target.displayName) preview")
     }
 
