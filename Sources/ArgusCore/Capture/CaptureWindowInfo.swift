@@ -47,12 +47,14 @@ public extension CaptureWindowInfo {
     }
 
     /// The dashboard card this window becomes when the user picks it.
-    func makeTarget() -> TargetApplication {
+    /// `id` lets a restored or re-selected target keep its card identity.
+    func makeTarget(id: UUID = UUID()) -> TargetApplication {
         TargetApplication(
+            id: id,
             displayName: appName,
             bundleIdentifier: appBundleIdentifier,
             windowTitle: windowTitle,
-            note: "window #\(id)"
+            note: "window #\(self.id)"
         )
     }
 

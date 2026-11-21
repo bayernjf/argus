@@ -24,10 +24,14 @@ struct DashboardView: View {
                         MonitoringCardView(
                             target: target,
                             frameImage: store.latestFrames[target.id],
-                            captureState: store.captureStates[target.id]
-                        ) {
-                            store.removeTarget(id: target.id)
-                        }
+                            captureState: store.captureStates[target.id],
+                            onRemove: {
+                                store.removeTarget(id: target.id)
+                            },
+                            onReselect: {
+                                store.beginRebind(targetID: target.id)
+                            }
+                        )
                     }
 
                     if store.targets.isEmpty {
@@ -42,11 +46,12 @@ struct DashboardView: View {
         .padding(24)
         .frame(minWidth: 900, minHeight: 600)
         .background(Color(nsColor: .windowBackgroundColor))
-        .sheet(isPresented: $store.isShowingPicker) {
+        .sheet(isPresented: $store.isShowingPicker, onDismiss: store.pickerDidDismiss) {
             WindowPickerSheet(store: store)
         }
         .task {
             await store.refreshPermission()
+            await store.restorePersistedTargets()
         }
     }
 
@@ -68,17 +73,20 @@ struct DashboardView: View {
             } label: {
                 Label("Add target", systemImage: "plus")
             }
-            .help("Pick an on-screen window to monitor")
+            .disabled(!store.canAddTarget)
+            .help(store.canAddTarget
+                  ? "Pick an on-screen window to monitor"
+                  : "Target limit reached (\(ArgusCore.TargetLimits.maximumMonitoredTargets)). Remove a card to add another.")
         }
     }
 
     private var statusStrip: some View {
         HStack(spacing: 18) {
-            metric("Targets", value: "\(store.targets.count)")
+            metric("Targets", value: "\(store.targets.count)/\(TargetLimits.maximumMonitoredTargets)")
             metric("Completed", value: "\(store.targets.filter { $0.phase == .completed }.count)")
             metric("Streaming", value: "\(store.targets.filter { $0.phase == .streaming }.count)")
             Spacer()
-            Text("M1: live single-window capture · reply detection lands in M3")
+            Text("M2a: persisted targets · click-to-switch lands in M2b")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

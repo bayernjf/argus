@@ -10,7 +10,7 @@ struct WindowPickerSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("Choose a window to monitor")
+                Text(store.isRebinding ? "Choose a replacement window" : "Choose a window to monitor")
                     .font(.headline)
                 Spacer()
                 Button {
@@ -88,6 +88,15 @@ Argus reads the pixels of the windows you explicitly pick, locally, to detect re
                 .help("Refresh window list")
             }
 
+            if !store.isRebinding && !store.canAddTarget {
+                Label(
+                    "Target limit reached (\(TargetLimits.maximumMonitoredTargets)). Remove a card to add another.",
+                    systemImage: "exclamationmark.circle"
+                )
+                .font(.callout)
+                .foregroundStyle(.orange)
+            }
+
             if let error = store.enumerationError {
                 Label("Window enumeration failed: \(error)", systemImage: "exclamationmark.triangle")
                     .font(.callout)
@@ -143,6 +152,7 @@ Argus reads the pixels of the windows you explicitly pick, locally, to detect re
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .disabled(!store.isRebinding && !store.canAddTarget)
                     .accessibilityLabel("\(window.appName) — \(window.windowTitle.isEmpty ? "(no title)" : window.windowTitle)")
                 }
                 .listStyle(.inset)

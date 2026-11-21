@@ -7,6 +7,7 @@ struct MonitoringCardView: View {
     var frameImage: CGImage?
     var captureState: CaptureState?
     var onRemove: (() -> Void)?
+    var onReselect: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -25,6 +26,11 @@ struct MonitoringCardView: View {
                 .strokeBorder(.white.opacity(0.08), lineWidth: 1)
         }
         .contextMenu {
+            if case .unresolved = captureState {
+                Button("Re-select window…") {
+                    onReselect?()
+                }
+            }
             Button("Remove target", role: .destructive) {
                 onRemove?()
             }
@@ -87,13 +93,15 @@ struct MonitoringCardView: View {
         case .live: "LIVE · 2 FPS"
         case .connecting: "CONNECTING…"
         case .failed: "CAPTURE ERROR"
-        case nil: "CAPTURE PENDING · M1C"
+        case .unresolved: "NEEDS WINDOW"
+        case nil: "NO SESSION"
         }
     }
 
     private var badgeTint: Color {
         switch captureState {
         case .failed: .red
+        case .unresolved: .orange
         default: Color.primary.opacity(0.55)
         }
     }
@@ -103,6 +111,7 @@ struct MonitoringCardView: View {
         case .live: .green
         case .connecting: .orange
         case .failed: .red
+        case .unresolved: .orange
         case nil: target.phase.tint
         }
     }
@@ -110,6 +119,12 @@ struct MonitoringCardView: View {
     @ViewBuilder
     private var bottomCaption: some View {
         if case .failed(let reason) = captureState {
+            Text(reason)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.orange)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else if case .unresolved(let reason) = captureState {
             Text(reason)
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.orange)
@@ -139,7 +154,19 @@ struct MonitoringCardView: View {
         }
     }
 
+    @ViewBuilder
     private var footer: some View {
+        if case .unresolved = captureState {
+            Button {
+                onReselect?()
+            } label: {
+                Label("Re-select window…", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.caption)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+
         HStack {
             Text(target.phase.detail)
                 .font(.caption2)

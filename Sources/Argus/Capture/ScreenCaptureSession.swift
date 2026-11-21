@@ -14,7 +14,7 @@ final class ScreenCaptureSession: NSObject, CaptureSource, SCStreamOutput, SCStr
         static let maxOutputHeight = 1440
     }
 
-    let targetID = UUID()
+    let targetID: UUID
 
     // Thread-safe renderer: frames are converted on the stream queue, read on
     // the main actor afterwards as immutable CGImages.
@@ -32,8 +32,12 @@ final class ScreenCaptureSession: NSObject, CaptureSource, SCStreamOutput, SCStr
     /// Resolves the picked window by its `SCWindow.windowID` from fresh
     /// shareable content; a minimized/off-screen window no longer resolves,
     /// which surfaces as `.windowNotFound` instead of a dead stream.
-    init(target: CaptureWindowInfo) async throws {
+    /// `targetID` is the dashboard card identity: a freshly generated UUID
+    /// made `CaptureFrame.targetID` point at no card at all (fixed in M2a).
+    init(targetID: UUID, window: CaptureWindowInfo) async throws {
+        self.targetID = targetID
         super.init()
+        let target = window
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
         guard let scWindow = content.windows.first(where: { $0.windowID == target.id }) else {
             throw CaptureSessionError.windowNotFound(target: target)
