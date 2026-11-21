@@ -56,6 +56,9 @@ final class DashboardStore {
     private(set) var latestFrames: [UUID: CGImage] = [:]
     private(set) var captureStates: [UUID: CaptureState] = [:]
 
+    /// Picked-window id per target (CGWindowID space, same as SCWindow.windowID).
+    private var targetWindowIDs: [UUID: UInt32] = [:]
+
     var isShowingPicker = false
 
     private let permission: CapturePermissionProviding
@@ -139,12 +142,14 @@ final class DashboardStore {
     func addTarget(_ window: CaptureWindowInfo) {
         let target = window.makeTarget()
         targets.append(target)
+        targetWindowIDs[target.id] = window.id
         isShowingPicker = false
         startCapture(for: target, window: window)
     }
 
     func removeTarget(id: UUID) {
         targets.removeAll { $0.id == id }
+        targetWindowIDs.removeValue(forKey: id)
         if let session = sessions.removeValue(forKey: id) {
             session.stop()
         }
@@ -179,7 +184,7 @@ final class DashboardStore {
         pollTaskBox.task = Task {
             while !Task.isCancelled {
                 pollFrames()
-                try? await Task.sleep(nanoseconds: 500_000_000)
+                try? await Task.sleep(nanoseconds: 250_000_000)
             }
         }
     }
@@ -192,6 +197,16 @@ final class DashboardStore {
                 deadIDs.append(id)
                 continue
             }
+            // SCStream keeps delivering a frozen last frame when the picked
+            // window closes without sending didStopWithError (observed on
+            // macOS 27), so existence is re-checked against CGWindowList.
+            // The .optionAll list still contains minimized windows, so a
+            // minimized target is not mistaken for a closed one.
+            if let windowID = targetWindowIDs[id], !windowExists(windowID) {
+                captureStates[id] = .failed("Window closed")
+                deadIDs.append(id)
+                continue
+            }
             guard let frame = session.latestFrame() else { continue }
             latestFrames[id] = frame.image
             if let index = targets.firstIndex(where: { $0.id == id }) {
@@ -201,6 +216,11 @@ final class DashboardStore {
         for id in deadIDs {
             sessions.removeValue(forKey: id)?.stop()
         }
+    }
+
+    private func windowExists(_ windowID: UInt32) -> Bool {
+        let list = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
+        return list.contains { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value == windowID }
     }
 
     private func describeCaptureError(_ error: Error) -> String {
