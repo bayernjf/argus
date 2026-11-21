@@ -1,7 +1,7 @@
 # handoff — Argus
 
 - 更新日期：2026-11-21
-- 当前阶段：M2 进行中（M2a/M2b 已落码，待实机验收）；M1 已完成并通过实机验收
+- 当前阶段：M2 进行中（M2a/M2b/M2c 已落码，待实机验收）；M1 已完成并通过实机验收
 - Tier：2
 
 ## 当前状态
@@ -10,14 +10,15 @@
 - UI：SwiftUI Dashboard 接入 `DashboardStore`（@MainActor @Observable，docs/02 预定模块）；「Add target」打开 `WindowPickerSheet`；卡片显示真实窗口信息与内存缩略图（scaledToFit 整窗可见）。
 - M1a `.app` bundle：`scripts/make-app.sh` 组装 `build/Argus.app`（bundle id `com.bayernjf.argus`，Info.plist 含 `NSScreenCaptureUsageDescription`；优先使用本机自签 `Argus Dev` 身份，缺失时回退 ad-hoc，`ARGUS_SIGN_IDENTITY` 可覆盖）。
 - M1b 窗口枚举与权限：`WindowEnumerator`（SCShareableContent → `CaptureWindowInfo` 过滤）+ `PermissionManager`（CGPreflight/CGRequest，激活时热更新）；被拒时 picker 内提供「Open System Settings」+「Retry」，不崩溃。
-- M1c 真实帧捕获：`ScreenCaptureSession`（`SCContentFilter(desktopIndependentWindow:)`、2 fps、960 宽比例输出、queueDepth 3、仅内存保留最新帧）；`DashboardStore` 管会话生命周期并以 250ms 轮询把帧喂给卡片；卡片显示 LIVE · 2 FPS / CONNECTING / CAPTURE ERROR 状态；窗口关闭通过 `CGWindowList` 复核转为失败态，权限撤销以失败态呈现，不崩溃。
+- M1c 真实帧捕获：`ScreenCaptureSession`（`SCContentFilter(desktopIndependentWindow:)`、2 fps、960 宽比例输出、queueDepth 3、仅内存保留最新帧）；`DashboardStore` 管会话生命周期并以 250ms 轮询把帧喂给卡片；卡片显示 LIVE · 2 FPS / CONNECTING / CAPTURE ERROR 状态；窗口关闭通过 `CGWindowList` 复核转为 `WINDOW CLOSED`（M2c 起可自动重建），权限撤销以失败态呈现，不崩溃。
 - Picker 去重：已监控窗口在列表中排除、`addTarget` 防重复兜底、移除后下次枚举恢复；全部合格窗口被监控时空列表给独立提示。
 - M2a 目标持久化与重启恢复：`PersistedTarget` / `TargetFile`（版本 1，未知版本拒读）+ `TargetFileStore`（`~/Library/Application Support/Argus/targets.json`，原子写，损坏文件隔离为 `targets.corrupt-*.json`）+ `TargetRestorer`（严格不猜）。
 - M2a 上限与状态：硬上限 3（`TargetLimits`），超限时 Add 置灰、picker 内提示；恢复失败的目标显示 `NEEDS WINDOW`，卡片内「Re-select window」/右键菜单可重新绑定，不新增第 4 张卡。
 - M2a 顺手修：`CaptureFrame.targetID` 之前是会话内随机 UUID，与卡片无关；现在由 `DashboardStore` 传入卡片 id。窗口存在性检查从「每目标每轮询一次 CGWindowList」改为「每轮询一次共享快照」。
 - M2b 点击切换：`AccessibilityWindowActivator` + `WindowMatchPolicy`；点击缩略图按 bundle 找进程、读 AX 窗口标题、先匹配后激活。唯一匹配或单窗口才 raise；多候选/无候选不激活应用，避免跳错窗口；AX 未授权时只激活应用，顶部 banner 提示授权。Accessibility 请求由状态栏「Enable exact switching」显式触发，不在点击卡片时弹系统框。
+- M2c 生命周期：`CaptureState` 增加 `paused` / `windowClosed`；暂停停流并保留最后一帧（卡片标注 PAUSED），恢复优先绑定原窗口、失效才走严格唯一匹配；窗口关闭后每 10 秒枚举一次，仅在同 bundle 唯一可用窗口时自动重绑，多候选继续等待；暂停、移除、重绑与启动中的竞态均有守卫，不挂载过期 SCStream。布局最小宽度 900→600，状态条用 `ViewThatFits` 在窄窗隐藏提示；新增 `scripts/soak.sh` 采样 CPU/RSS 供 3 目标 30 分钟 soak 使用。
 - 核心逻辑：`ReplyPhase` / `ReplyActivity` / `ReplyCompletionDetector`；`CaptureWindowInfo` 过滤与映射、目标恢复纯逻辑均有单测覆盖。
-- 文档：docs/03 M2 标记进行中；docs/04 状态更新；docs/06 证据刷新到 M2a；docs/07 bundle id 已确认；docs/08 R-10 已闭环。
+- 文档：docs/03 M2 标记进行中；docs/04 FR-06/07 更新为 in_progress；docs/05 新增 ADR-013（窗口关闭可恢复、暂停冻结最后一帧）；docs/06 证据刷新到 M2c；docs/08 R-07/R-08 状态更新；docs/07 bundle id 已确认。
 
 ## 实机验收结果（M1，2026-11-21，owner 本机 macOS 27）
 
@@ -45,17 +46,26 @@
 - 目标应用已退出：banner 提示 not running，不切到别的应用。
 - 目标窗口最小化：点卡片可恢复并前置；多 Space 行为记录实测结果，不宣称已支持。
 
+## M2c 待实机验收（代码已完成）
+
+- 点卡片右下暂停 → `PAUSED`，最后一帧保留但不再刷新；再点恢复 → 回到 LIVE，帧继续更新。
+- `CONNECTING` 时立刻暂停 → 最终停在 PAUSED，不出现 CAPTURE ERROR，也不残留会话。
+- 关闭目标窗口 → `WINDOW CLOSED`，卡片提示等待；在 10 秒级重试内重新打开同应用唯一窗口 → 自动恢复 LIVE。
+- 同应用保留两个窗口再关掉其中一个 → 不自动猜，维持等待；点 Re-select 可手动绑定。
+- 暂停中的目标不参与自动重建；恢复时若原窗口已消失，才按严格唯一匹配重绑。
+- 600px 宽窗口：状态条隐藏右侧提示、卡片单列、无横向溢出；900px：多列正常。
+- `scripts/soak.sh 30` + 3 个目标手工跑满 30 分钟，记录 CPU/RSS 与串流/错绑情况。
+
 ## 未接线
 
 - OCR / Accessibility 控件信号 / 帧差提取（M3；AX 目前只用于窗口切换，不参与检测）。
-- 暂停/恢复、会话自动重建与退避（M2c；当前窗口关闭后需手选或重选）。
 - 最小化窗口的 SCStream 行为（docs/02 开放问题，M4 soak 记录）。
 - 签名、公证、DMG/ZIP 与内测分发（M5；bundle 已就绪，签名身份方案已定）。
 
 ## 下一步
 
-1. 先做 M2b 实机验收（上方清单），把结果补进本文件。
-2. M2c：暂停/恢复、会话自动重建、3 目标 30 分钟 soak、900/600px 布局检查。
+1. 跑 M2a / M2b / M2c 三份实机清单（上方），把结果补进本文件；AX 真实切窗必须人工授权后测。
+2. 用 `scripts/soak.sh 30` 完成 3 目标 30 分钟 soak，填 CPU/RSS 与错绑记录。
 3. M2 收口后更新 docs/06 手工矩阵与 handoff 证据，再进 M3。
 
 ## 已拍板（2026-11-21）
@@ -64,6 +74,7 @@
 - 重启恢复严格不猜：同 bundle 只有唯一可用窗口才自动绑定，多候选一律 `NEEDS WINDOW` 交回用户。
 - 首版客户端矩阵推到 M3 再定；M2 验收只要求任意真实窗口。
 - 激活先匹配再激活；多候选或无候选不激活应用；AX 缺失只做应用级切换并明示降级（ADR-012）。
+- 窗口关闭是恢复态不是终态：后台每 10 秒重试，严格唯一匹配才重绑；暂停目标不参与重建（M2c 默认）。
 
 ## 待拍板
 
@@ -79,11 +90,15 @@
 swift build -> Build complete!
 swift test  -> 39 tests, 0 failures（ArgusCoreTests 35 + ArgusTests 4）
                （M2a 17：7 TargetRestorer + 5 PersistedTarget/上限 + 1 卡片身份 + 4 TargetFileStore；
-                 M2b 7：WindowMatchPolicy）
-./scripts/make-app.sh -> build/Argus.app (com.bayernjf.argus, Authority=Argus Dev, 2026-11-21 22:15)
+                 M2b 7：WindowMatchPolicy；M2c 未新增纯逻辑单测）
+./scripts/make-app.sh -> build/Argus.app (com.bayernjf.argus, Authority=Argus Dev, 2026-11-21 22:40)
+M2c 布局烟测 -> 3 张假 bundle 的 NEEDS WINDOW 卡片（无真实窗口，未捕获任何用户内容）：
+                 600×700 单列、状态条 4 项指标完整且提示隐藏；900×700 双列、提示显示；均无横向溢出。
+                 截图 build/argus-m2c-3cards-600.png / -900.png（未提交）；演示 targets.json 已删除
 M1 实机验收 -> 上述 2026-11-21 结果（截图取证 /tmp/argus-*.png，验收会话留存）
 M2a 实机验收 -> 未执行；上方「M2a 待实机验收」为验收清单
 M2b 实机验收 -> 未执行；上方「M2b 待实机验收」为验收清单；AX 真实 raise 不能用 mock 代替
+M2c 实机验收 -> 未执行；上方「M2c 待实机验收」为验收清单；30 分钟 soak 未跑
 ```
 
 > 2026-11-21 事故记录：验收自动化期间误关了一个正在运行 `codebuddy` 的 Terminal 窗口（终止其 node 进程）；已向 owner 说明，重启 codebuddy 即可恢复。教训：窗口自动化只操作自建窗口。
