@@ -1,8 +1,11 @@
 import ArgusCore
+import CoreGraphics
 import SwiftUI
 
 struct MonitoringCardView: View {
     let target: TargetApplication
+    var frameImage: CGImage?
+    var captureState: CaptureState?
     var onRemove: (() -> Void)?
 
     var body: some View {
@@ -28,6 +31,7 @@ struct MonitoringCardView: View {
         }
     }
 
+    @ViewBuilder
     private var thumbnail: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 10)
@@ -39,31 +43,74 @@ struct MonitoringCardView: View {
                     )
                 )
 
-            Image(systemName: "macwindow")
-                .font(.system(size: 26, weight: .light))
-                .foregroundStyle(.secondary)
+            if let frameImage {
+                Image(decorative: frameImage, scale: 2.0, orientation: .up)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Image(systemName: "macwindow")
+                    .font(.system(size: 26, weight: .light))
+                    .foregroundStyle(.secondary)
+            }
 
             VStack {
                 HStack {
-                    Text("CAPTURE PENDING · M1C")
+                    Text(badgeText)
                         .font(.caption2.weight(.bold))
                         .tracking(1)
                         .foregroundStyle(.secondary)
                     Spacer()
                     Circle()
-                        .fill(target.phase.tint)
+                        .fill(dotTint)
                         .frame(width: 7, height: 7)
                 }
                 Spacer()
-                Text("Click thumbnail to switch in M2")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                bottomCaption
             }
             .padding(10)
         }
         .frame(height: 150)
-        .accessibilityLabel("\(target.displayName) live preview")
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .accessibilityLabel("\(target.displayName) preview")
+    }
+
+    private var badgeText: String {
+        switch captureState {
+        case .live: "LIVE · 1 FPS"
+        case .connecting: "CONNECTING…"
+        case .failed: "CAPTURE ERROR"
+        case nil: "CAPTURE PENDING · M1C"
+        }
+    }
+
+    private var dotTint: Color {
+        switch captureState {
+        case .live: .green
+        case .connecting: .orange
+        case .failed: .red
+        case nil: target.phase.tint
+        }
+    }
+
+    @ViewBuilder
+    private var bottomCaption: some View {
+        if case .failed(let reason) = captureState {
+            Text(reason)
+                .font(.caption2)
+                .foregroundStyle(.orange)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else if frameImage != nil {
+            Text("Frames stay in memory · nothing on disk")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            Text("Click thumbnail to switch in M2")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var titleRow: some View {
