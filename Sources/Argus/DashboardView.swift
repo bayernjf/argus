@@ -21,7 +21,11 @@ struct DashboardView: View {
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 16) {
                     ForEach(store.targets) { target in
-                        MonitoringCardView(target: target) {
+                        MonitoringCardView(
+                            target: target,
+                            frameImage: store.latestFrames[target.id],
+                            captureState: store.captureStates[target.id]
+                        ) {
                             store.removeTarget(id: target.id)
                         }
                     }
@@ -74,7 +78,7 @@ struct DashboardView: View {
             metric("Completed", value: "\(store.targets.filter { $0.phase == .completed }.count)")
             metric("Streaming", value: "\(store.targets.filter { $0.phase == .streaming }.count)")
             Spacer()
-            Text("M1: window picker wired · frame capture lands in M1c")
+            Text("M1: live single-window capture · reply detection lands in M3")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -89,7 +93,7 @@ struct DashboardView: View {
                 .foregroundStyle(.secondary)
             Text("No targets yet")
                 .font(.headline)
-            Text("Use “Add target” to pick a window; real frame capture arrives in M1c.")
+            Text("Use “Add target” to pick a window and start live capture.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
