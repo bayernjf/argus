@@ -139,6 +139,7 @@ Argus reads the pixels of the windows you explicitly pick, locally, to detect re
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("\(window.appName) — \(window.windowTitle.isEmpty ? "(no title)" : window.windowTitle)")
                 }
                 .listStyle(.inset)
             }
