@@ -1,7 +1,7 @@
 # handoff — Argus
 
 - 更新日期：2026-11-22
-- 当前阶段：M3「回复完成检测 v1」进行中——核心、信号提取、Dashboard 接入、合成 fixture 正/负验收与豆包工作真实客户端视觉链路已完成，代码与文档已 push/merge 到 `main`；豆包工作的 AX 增强路径未验证，ChatGPT/Claude/Cursor 尚未标定，因此 M3 不宣称完成。M1/M2 已完成并合入 `main`。
+- 当前阶段：M3「回复完成检测 v1」已完成（2026-11-22 owner 接受“合成 fixture + 豆包工作真实视觉链路”为退出证据）。M1/M2/M3 核心已合入 `main`；豆包工作 Profile 与验收记录在 `dev`，`main` 仍为 `6a6f43c`，AX 增强与 ChatGPT/Claude/Cursor 标定延后 M4。
 - Tier：2
 
 ## 当前状态
@@ -23,7 +23,7 @@
 - M3 融合：AX/视觉 Stop 为 true 直接 generating；文本变化 0.95；OCR 不可用降 0.45 走 unknown；文本稳定 + 小视觉变化置信 0.7，防止 spinner/光标期误完成；纯稳定 0.9。
 - M3 Dashboard：每目标 `replyProfiles`/`detectors`/`analyzers`/`lastDetectionAt`；0.25s 取帧、检测最多 0.5s 一次；回写前复核 generation/live/未暂停；暂停、移除、关窗清理检测状态；卡片 footer 两行 `State <relative>` / `Frame <relative>`；hint 改为 “M3: frame diff + OCR · Accessibility optional”。
 - M3 fixture：`Fixtures/ArgusChatProbe.swift` + `Fixtures/PhaseSampler.swift` + `scripts/build-m3-fixtures.sh`；A/B/C 三个合成 bundle，场景 `normal/stall/stallAx/static/blink`；事件日志只记生命周期标签与时间戳。
-- 文档：docs/02 检测章节改为 M3 实际实现；docs/03 M3 进行中并加切片；docs/04 FR-04/FR-12 改 in_progress；docs/05 新增 ADR-014（视觉基线 + AX 增强/否决）；docs/06 证据刷新到 M3；docs/08 R-01/R-02/R-13 更新。
+- 文档：docs/02 检测章节为 M3 实际实现；docs/03 M3 标为完成；docs/04 FR-04 verified、FR-12 仍 in_progress（本地 Profile 文件与损坏回退留 M4）；docs/05 ADR-014；docs/06 证据刷新到 M3；docs/08 R-01/R-02/R-13/R-14 更新。
 
 ## 实机验收结果（M1，2026-11-21，owner 本机 macOS 27）
 
@@ -85,7 +85,7 @@
 
 ## M3 合成 fixture 验收结果（2026-11-22，自建 fixture，未捕获用户内容）
 
-结论：检测机制的正/负两轮通过；这是合成聊天窗口，不是真实 ChatGPT/Claude/Cursor，真实客户端 Profile 与阈值仍未标定，M3 不宣称完成。
+结论：检测机制的正/负两轮通过；这是合成聊天窗口，不是真实 ChatGPT/Claude/Cursor。后续豆包工作真实视觉链路通过，owner 于 2026-11-22 接受该组合作为 M3 退出证据；AX 增强与其余客户端标定延后 M4。
 
 正例：
 
@@ -122,9 +122,10 @@ UI 与布局：
 - AX 遍历在 detached task 中返回后重新校验 capture generation/live/暂停，避免重绑窗口时把旧进程信号写进新 generation 的缓存。
 - 验收后已停止 3 个 fixture 与 Argus 测试进程；`targets.json` 移到 `/tmp/argus-m3-targets-final.json`，`/tmp/ArgusM3Fixtures` 已删除；证据日志与截图保留。
 
-留待 owner 判断：
+owner 验收结论（2026-11-22）：
 
-- 3 个合成 fixture bundle 是否可替代 M3 要求的“3 个应用”；真实客户端 ROI/control ROI/settle 标定是否进入 M3 或顺延到 M4。
+- 接受“3 个合成 fixture bundle + 豆包工作真实视觉链路”作为 M3 退出证据。
+- AX 增强、生成中长停顿真实负例、ChatGPT/Claude/Cursor 标定延后 M4；M3 不再等这三项。
 
 
 ## M3 豆包工作真实客户端视觉链路验收（2026-11-22，合成会话）
@@ -159,29 +160,29 @@ Profile：
 - `swift build` 通过；`swift test` 48 个 `ArgusCoreTests` 0 failures；`swift test --filter ArgusTests` 11 个 0 failures；合计 59。
 - 新增 `Sources/Argus/ReplyProfileRegistry.swift` 与 `Tests/ArgusTests/ReplyProfileRegistryTests.swift`；`DashboardView` 默认注入 registry。
 
-未覆盖：
+未覆盖（延后 M4）：
 
 - 生成中长停顿/思考停顿的真实负例；豆包工作 AX 增强；ChatGPT/Claude/Cursor；3 个真实客户端矩阵。
 
 ## M3 交付状态（2026-11-22）
 
-- 代码提交：`941cc69`（检测管线与 Dashboard 接入）、`f342fdf`（合成 fixture 与构建脚本）、`1bfed2d`（M3 文档）。
-- `origin/dev` 已推送至 `1bfed2d`。
-- PR #9：`https://github.com/bayernjf/argus/pull/9`，CI `build-and-test` 通过（两次检查均 SUCCESS）。
-- merge commit：`57dd732`；本地与远端 `main` 均为该提交，`dev` 保留。
-- 清理：fixture 进程与 Argus 测试进程已停止；测试 `targets.json` 归档到 `/tmp/argus-m3-targets-final.json`；`/tmp/ArgusM3Fixtures` 已删除；证据日志与截图保留。
+- M3 代码/Profile/验收记录：`941cc69`（检测管线与 Dashboard）、`f342fdf`（合成 fixture 与构建脚本）、`1bfed2d`（M3 文档）、`335edbc`（豆包工作 Profile）、`dcb201b`（豆包工作视觉验收）；本次 M3 状态更新在 `dev` 的后续提交。
+- `dev` 已推送；`main` 仍为 `6a6f43c`，本次状态更新待 PR 合入。
+- PR #9：`https://github.com/bayernjf/argus/pull/9`，CI `build-and-test` 通过（两次检查均 SUCCESS）；merge `57dd732`。
+- PR #10：`https://github.com/bayernjf/argus/pull/10`；merge `6a6f43c`，`main` 当前为该提交。
+- 清理：fixture 进程与 Argus 测试进程已停止；测试 `targets.json` 归档到 `/tmp/argus-m3-targets-final.json`；`/tmp/ArgusM3Fixtures` 已删除；证据日志与截图保留；豆包工作合成会话与误发消息已由用户手动删除。
 
 ## 未接线
 
-- 真实客户端 Target Profile：豆包工作视觉 Profile 已接入（`ReplyProfileRegistry.doubaoWork`），但 AX 增强不可用；ChatGPT/Claude/Cursor 的 ROI、control ROI、settleDuration、阈值未标定；未知 bundle 继续回退 `ReplyProfile.generic`。
+- 真实客户端 Target Profile：豆包工作视觉 Profile 已接入并通过（`ReplyProfileRegistry.doubaoWork`）；AX 增强不可用；ChatGPT/Claude/Cursor 的 ROI、control ROI、settleDuration、阈值延后 M4；未知 bundle 继续回退 `ReplyProfile.generic`。
 - 最小化窗口的 SCStream 行为（docs/02 开放问题，M4 soak 记录）。
 - 签名、公证、DMG/ZIP 与内测分发（M5；bundle 已就绪，签名身份方案已定）。
 
 ## 下一步
 
-1. 由 owner 确认：合成 fixture 是否可作 M3 退出证据；豆包工作视觉 Profile 已通过，但 AX 路径和“3 个真实客户端”仍未覆盖。
-2. 如需真实标定，先在空会话/合成提示词上确认 ROI、control ROI、settleDuration 与阈值，不读取用户已有对话。
-3. M3 收口后再进 M4：4 小时 3 目标 soak、活跃 OCR CPU、隐私/脱敏检查。
+1. M3 状态更新在 `dev`；如需对外一致，开 PR 合入 `main`（`main` 仍为 `6a6f43c`）。
+2. 进入 M4：4 小时 3 目标 soak、活跃 OCR CPU、隐私/脱敏检查。
+3. M4 内补 AX 增强、生成中长停顿真实负例、ChatGPT/Claude/Cursor 标定；这些不阻塞 M4 起步。
 
 ## 已拍板（2026-11-21）
 
@@ -191,12 +192,13 @@ Profile：
 - 激活先匹配再激活；多候选或无候选不激活应用；AX 缺失只做应用级切换并明示降级（ADR-012）。
 - 窗口关闭是恢复态不是终态：后台每 10 秒重试，严格唯一匹配才重绑；暂停目标不参与重建（M2c 默认）。
 - `one-code` 仅作借鉴评估，2026-11-22 结论为暂不实施；先专注 Argus 自身，未来按 `docs/09` 的触发条件复核。未引入任何依赖或代码。
+- M3 验收：接受“合成 fixture + 豆包工作真实视觉链路”；AX 增强与 ChatGPT/Claude/Cursor 标定延后 M4（2026-11-22）。
 
 ## 待拍板
 
-- 合成 fixture 是否可替代 M3 要求的“3 个应用”验收；真实客户端 Profile 是否必须进 M3。
-- 完成检测的误报/漏报阈值与可接受延迟（合成 fixture 已测，真实场景待定）。
+- 完成检测的误报/漏报阈值与可接受延迟（M3 已按 owner 口径接受；正式 SLA 留 M4）。
 - 多显示器 / Space 下激活优先级与行为（M2c/M4 实测，不猜）。
+- ChatGPT/Claude/Cursor 矩阵是否作为 M4 退出条件。
 - 是否走 Mac App Store；当前默认 Developer ID + 公证。
 - 产品正式英文名/中文名是否保持 Argus。
 

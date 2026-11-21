@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 — 2026-11-22（M3，进行中）
+## 0.3.0 — 2026-11-22（M3，已完成）
 
 - 新增 `ReplyObservation`、`ReplyProfile` / `NormalizedRect`、`LumaGrid`；`ReplyCompletionDetector` 增加 `phaseChangedAt`、observation 入口、settling 重开；`unknown` 保留 generating 历史。
 - 新增每目标 `ReplySignalAnalyzer`：160×160 灰度帧差、SHA-256 文本指纹、Vision 本地 OCR；OCR 按“首帧/失败恢复/画面变化 + `ocrInterval`”节流，不保留正文。
@@ -9,9 +9,10 @@
 - 卡片 footer 显示 `State <relative>` 与 `Frame <relative>`；hint 改为 “M3: frame diff + OCR · Accessibility optional”。
 - 新增 `Fixtures/` 合成聊天 fixture、`scripts/build-m3-fixtures.sh` 与只读 `PhaseSampler`。
 - 合成 fixture 验收：A/B/C 正例 finish→Completed 上界 2.072/1.865/2.220s；`stallAx` 4.002s 内始终 Streaming；`static`/`blink` 全程 Idle，无 Completed。
+- 新增 `ReplyProfileRegistry` 与豆包工作视觉 Profile：replyROI 排除侧栏/输入框，真实会话正例 Settling→Completed 1.07s，完成后 30s+ Completed；静态 11.9s 全程 Idle。
 - 空闲资源约 11.7% CPU / 123MB；早期每 0.5s 无条件 OCR 的 37.5% CPU 已修。
-- 新增 18 个用例（合计 57 tests / 0 failures），新增 ADR-014。
-- M3 未收口：真实客户端 Profile 未标定，文档与提交随本版本进行中。
+- 新增 20 个用例（合计 59 tests / 0 failures），新增 ADR-014。
+- M3 已按 owner 口径完成：合成 fixture + 豆包工作真实视觉链路；AX 增强与 ChatGPT/Claude/Cursor 标定延后 M4。
 
 ## 0.2.0 — 2026-11-21（M2a/M2b/M2c，已实机验收）
 
