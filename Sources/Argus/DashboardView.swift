@@ -2,21 +2,32 @@ import ArgusCore
 import SwiftUI
 
 struct DashboardView: View {
-    @State private var targets = ArgusPreviewData.targets
+    @State private var store: DashboardStore
+
+    init(store: DashboardStore = DashboardStore()) {
+        _store = State(initialValue: store)
+    }
 
     private let columns = [
         GridItem(.adaptive(minimum: 300, maximum: 420), spacing: 16)
     ]
 
     var body: some View {
+        @Bindable var store = store
         VStack(alignment: .leading, spacing: 20) {
             header
             statusStrip
 
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 16) {
-                    ForEach(targets) { target in
-                        MonitoringCardView(target: target)
+                    ForEach(store.targets) { target in
+                        MonitoringCardView(target: target) {
+                            store.removeTarget(id: target.id)
+                        }
+                    }
+
+                    if store.targets.isEmpty {
+                        emptyHint
                     }
                 }
                 .padding(.vertical, 4)
@@ -27,6 +38,12 @@ struct DashboardView: View {
         .padding(24)
         .frame(minWidth: 900, minHeight: 600)
         .background(Color(nsColor: .windowBackgroundColor))
+        .sheet(isPresented: $store.isShowingPicker) {
+            WindowPickerSheet(store: store)
+        }
+        .task {
+            await store.refreshPermission()
+        }
     }
 
     private var header: some View {
@@ -43,27 +60,41 @@ struct DashboardView: View {
             Spacer()
 
             Button {
-                // Target picker lands in M1.
+                store.openPicker()
             } label: {
                 Label("Add target", systemImage: "plus")
             }
-            .disabled(true)
-            .help("Window picker lands in M1")
+            .help("Pick an on-screen window to monitor")
         }
     }
 
     private var statusStrip: some View {
         HStack(spacing: 18) {
-            metric("Targets", value: "\(targets.count)")
-            metric("Completed", value: "\(targets.filter { $0.phase == .completed }.count)")
-            metric("Streaming", value: "\(targets.filter { $0.phase == .streaming }.count)")
+            metric("Targets", value: "\(store.targets.count)")
+            metric("Completed", value: "\(store.targets.filter { $0.phase == .completed }.count)")
+            metric("Streaming", value: "\(store.targets.filter { $0.phase == .streaming }.count)")
             Spacer()
-            Text("M0 skeleton · capture and activation are not wired yet")
+            Text("M1: window picker wired · frame capture lands in M1c")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .padding(14)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var emptyHint: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "plus.viewfinder")
+                .font(.system(size: 28, weight: .light))
+                .foregroundStyle(.secondary)
+            Text("No targets yet")
+                .font(.headline)
+            Text("Use “Add target” to pick a window; real frame capture arrives in M1c.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.vertical, 48)
     }
 
     private func metric(_ label: String, value: String) -> some View {
@@ -90,5 +121,5 @@ struct DashboardView: View {
 }
 
 #Preview {
-    DashboardView()
+    DashboardView(store: DashboardStore(initialTargets: ArgusPreviewData.targets))
 }

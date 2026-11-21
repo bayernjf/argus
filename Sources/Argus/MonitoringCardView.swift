@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MonitoringCardView: View {
     let target: TargetApplication
+    var onRemove: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -19,6 +20,11 @@ struct MonitoringCardView: View {
         .overlay {
             RoundedRectangle(cornerRadius: 16)
                 .strokeBorder(.white.opacity(0.08), lineWidth: 1)
+        }
+        .contextMenu {
+            Button("Remove target", role: .destructive) {
+                onRemove?()
+            }
         }
     }
 
@@ -39,7 +45,7 @@ struct MonitoringCardView: View {
 
             VStack {
                 HStack {
-                    Text("LIVE PREVIEW")
+                    Text("CAPTURE PENDING · M1C")
                         .font(.caption2.weight(.bold))
                         .tracking(1)
                         .foregroundStyle(.secondary)
