@@ -1,7 +1,7 @@
 # handoff — Argus
 
 - 更新日期：2026-11-22
-- 当前阶段：M3「回复完成检测 v1」进行中——核心、信号提取、Dashboard 接入与合成 fixture 正/负验收已完成；真实客户端 Profile 标定、文档收口与提交未完成。M1/M2 已完成并合入 `main`。
+- 当前阶段：M3「回复完成检测 v1」进行中——核心、信号提取、Dashboard 接入与合成 fixture 正/负验收已完成，代码与文档已 push/merge 到 `main`；真实客户端 Profile 标定未完成，因此 M3 不宣称完成。M1/M2 已完成并合入 `main`。
 - Tier：2
 
 ## 当前状态
@@ -127,6 +127,14 @@ UI 与布局：
 - 3 个合成 fixture bundle 是否可替代 M3 要求的“3 个应用”；真实客户端 ROI/control ROI/settle 标定是否进入 M3 或顺延到 M4。
 
 
+## M3 交付状态（2026-11-22）
+
+- 代码提交：`941cc69`（检测管线与 Dashboard 接入）、`f342fdf`（合成 fixture 与构建脚本）、`1bfed2d`（M3 文档）。
+- `origin/dev` 已推送至 `1bfed2d`。
+- PR #9：`https://github.com/bayernjf/argus/pull/9`，CI `build-and-test` 通过（两次检查均 SUCCESS）。
+- merge commit：`57dd732`；本地与远端 `main` 均为该提交，`dev` 保留。
+- 清理：fixture 进程与 Argus 测试进程已停止；测试 `targets.json` 归档到 `/tmp/argus-m3-targets-final.json`；`/tmp/ArgusM3Fixtures` 已删除；证据日志与截图保留。
+
 ## 未接线
 
 - 真实客户端 Target Profile：ChatGPT/Claude/Cursor 的 ROI、control ROI、settleDuration、阈值未标定；当前所有目标走 `ReplyProfile.generic`（control ROI 为空，视觉 Stop 关键词不启用）。
@@ -135,10 +143,9 @@ UI 与布局：
 
 ## 下一步
 
-1. 提交并 push M3 代码、`Fixtures/`、`scripts/build-m3-fixtures.sh` 与文档；等 CI。
-2. 清理自建 fixture 进程与 `targets.json` 测试目标；保留 `/tmp` 证据日志和 `build/argus-m3-*.png`。
-3. 由 owner 确认：合成 fixture 是否可作 M3 退出证据；若不可，先标定至少 1 个真实客户端 Profile 再收口。
-4. M3 收口后再进 M4：4 小时 3 目标 soak、活跃 OCR CPU、隐私/脱敏检查。
+1. 由 owner 确认：合成 fixture 是否可作 M3 退出证据；若不可，先标定至少 1 个真实客户端 Profile 再收口。三个候选 app 本机都已安装：ChatGPT、Claude、Cursor。
+2. 如需真实标定，先在空会话/合成提示词上确认 ROI、control ROI、settleDuration 与阈值，不读取用户已有对话。
+3. M3 收口后再进 M4：4 小时 3 目标 soak、活跃 OCR CPU、隐私/脱敏检查。
 
 ## 已拍板（2026-11-21）
 
