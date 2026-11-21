@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — 2026-11-21（M2a/M2b/M2c，待实机验收）
+## 0.2.0 — 2026-11-21（M2a/M2b/M2c，已实机验收）
 
 - 目标列表持久化到 `~/Library/Application Support/Argus/targets.json`：版本化、原子写、损坏文件隔离。
 - 重启恢复严格不猜：同 bundle 只有唯一可用窗口才自动绑定，多候选显示 `NEEDS WINDOW` 并可重选。
@@ -17,6 +17,8 @@
 - 最小窗口宽度 900→600，状态条用 `ViewThatFits` 在窄窗隐藏提示；新增 `scripts/soak.sh`。
 - 实机验收修复：目标 App 退出时窗口消失优先于 `SCStream` 失败，落到可恢复的 `WINDOW CLOSED`。
 - 实机验收修复：同一 bundle 多实例时跨进程收集 AX 窗口再匹配，避免激活到未绑定的实例。
+- 实机验收修复：soak 脚本 CPU/RSS 拆为独立 CSV 字段。
+- M2 实机验收：3 目标 30 分钟 soak 全程 LIVE；点击切窗 10/10 为 97–115 ms；600/900 深浅色无横向溢出。
 
 ## 0.1.0 — 2026-11-21
 

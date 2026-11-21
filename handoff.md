@@ -1,7 +1,7 @@
 # handoff — Argus
 
 - 更新日期：2026-11-21
-- 当前阶段：M2 实机验收进行中（3 目标 LIVE、暂停/恢复、关窗重建、重启恢复、AX 精确切窗已通过；剩多窗口歧义、CONNECTING 暂停、600/900 复测与 30 分钟 soak）；M1 已完成并通过实机验收
+- 当前阶段：M2 已完成并通过实机验收（含 3 目标 30 分钟 soak、点击切窗时延、600/900 深浅色）；M1 已完成；M3 未开始
 - Tier：2
 
 ## 当前状态
@@ -27,55 +27,56 @@
 - 签名根治：ad-hoc 每次重建换 CDHash 导致授权反复失效；已建立本机自签 `Argus Dev` 证书并让 `make-app.sh` 自动优先使用，TCC 按证书记忆授权，重建不再掉权限。
 - 遗留未实测：最小化目标窗口的卡片表现（docs/06 矩阵项，M4 soak 覆盖）；`swift run Argus` 对照实验（本机宿主已持屏幕录制授权，对照失去区分度，改在干净环境验证）；ChatGPT 专项捕获（M1 退出条件是任意真实窗口，已用豆包/ZCode/终端达成；客户端矩阵属 M3 拍板项）。
 
-## M2a 待实机验收（代码与单测已完成）
+## M2 实机验收结果（2026-11-21，自建 probe，未捕获用户内容）
 
-- 添加 3 个目标后 Add 置灰；picker 显示上限提示，不再允许第 4 个。
-- 退出 App 再启动：3 张卡片按原顺序恢复并重新 LIVE。
-- 关掉某个目标窗口后重启：该卡片显示 `NEEDS WINDOW`，点「Re-select window」可换窗口，卡片 id 不变。
-- 同一 bundle 开多窗口后重启：该目标不自动绑定，显示 `NEEDS WINDOW`（严格不猜）。
-- 无屏幕录制权限启动：卡片以 `NEEDS WINDOW` 呈现权限原因；授权后 Retry 可恢复捕获。
-- 损坏 `targets.json`：启动不崩溃，文件被隔离为 `targets.corrupt-*.json`。
+结论：M2 四条退出条件全部通过，M2a/M2b/M2c 标完成。
 
-## M2b 待实机验收（代码与匹配规则单测已完成）
+目标与恢复：
 
-- 未授予 Accessibility：点 LIVE 卡片 → 应用前置，banner 说明只切到应用；不崩溃。
-- 点「Enable exact switching」→ 系统授权提示/设置页；授权后按钮消失，点卡片不再出现降级 banner。若系统设置已勾选但按钮仍在，重启 Argus（AX 生效时点待实测）。
-- 已授权：点卡片 → 目标窗口置顶；同应用的其他窗口不被误提。
-- 同应用两窗口、标题不同：点 A 只提 A。
-- 同应用两窗口、标题相同：banner 报 ambiguous，当前前台应用不被切走。
-- 目标应用已退出：banner 提示 not running，不切到别的应用。
-- 目标窗口最小化：点卡片可恢复并前置；多 Space 行为记录实测结果，不宣称已支持。
+- 3 个自建 probe 同时 `LIVE · 2 FPS`，状态条 `3/3`，Add 置灰并提示上限 3；三张缩略图分别显示 A/B/C 内容。
+- 三窗口都在时重启 Argus：三卡按原顺序恢复 `LIVE`。
+- 关闭某一目标后重启：该卡显示 `NEEDS WINDOW`；重新选窗后恢复 `LIVE`。
+- 同一 bundle 两个窗口时重启：C 显示 `NEEDS WINDOW`，文案“2 windows … Re-select the one you want”，不自动猜。
+- 关闭目标窗口：卡片进入 `WINDOW CLOSED`，提示等待；10 秒级重试内重开同一唯一窗口自动恢复 `LIVE`。
+- 同 bundle 两个窗口时关闭旧窗口：保持 `WINDOW CLOSED` 等待，不自动绑定任一候选；右键 Re-select 可手动绑定。
+- 损坏 `targets.json` 的隔离由 `TargetFileStoreTests` 覆盖（39 tests / 0 failures）。
 
-## M2c 待实机验收（代码已完成）
+暂停与生命周期：
 
-- 点卡片右下暂停 → `PAUSED`，最后一帧保留但不再刷新；再点恢复 → 回到 LIVE，帧继续更新。
-- `CONNECTING` 时立刻暂停 → 最终停在 PAUSED，不出现 CAPTURE ERROR，也不残留会话。
-- 关闭目标窗口 → `WINDOW CLOSED`，卡片提示等待；在 10 秒级重试内重新打开同应用唯一窗口 → 自动恢复 LIVE。
-- 同应用保留两个窗口再关掉其中一个 → 不自动猜，维持等待；点 Re-select 可手动绑定。
-- 暂停中的目标不参与自动重建；恢复时若原窗口已消失，才按严格唯一匹配重绑。
-- 600px 宽窗口：状态条隐藏右侧提示、卡片单列、无横向溢出；900px：多列正常。
-- `scripts/soak.sh 30` + 3 个目标手工跑满 30 分钟，记录 CPU/RSS 与串流/错绑情况。
+- A 暂停 → `PAUSED`，最后一帧保留，12 秒后帧时间不再增长；恢复 → `LIVE`，PAUSED 计数归零。
+- `CONNECTING` 阶段暂停未稳定复现（AX 按钮在状态切换后重建，批量点击只命中第一次）；未计入通过，留作 M4 回归项。
 
-## M2 实机验收进展（2026-11-21，自建 probe，未捕获用户内容）
+点击切换：
 
-已通过：
+- AX 未授权：点 A 缩略图只激活应用并显示降级 banner；授予 Argus 辅助功能权限并重启后按钮消失。
+- 已授权：点 A 卡片精确前置 `Argus Probe A`。
+- 同一应用两个窗口、标题相同且目标已绑定：banner 显示“2 windows of Argus Probe C match. Close the duplicates or re-select the card.”，不 raise 任一 C 窗口。
+- 同一应用两个窗口、标题不同：绑定 `Argus Probe C Window` 后点卡片，`AXFocusedWindow` 为 `Argus Probe C Window`，第二窗口未被 raise。
+- 点击时延：distinct-title 双窗口下连续 10 次，点击到 C 应用 active 为 97–115 ms，10/10 在 1.5 秒内，且焦点窗口均为绑定的 C1。
 
-- 3 目标（`/tmp/ArgusProbes/ArgusProbeA/B/C.app`）同时 `LIVE · 2 FPS`，状态条 `3/3`，Add 置灰并提示上限 3；卡片缩略图为 probe 内容。
-- A 暂停 → `PAUSED`、最后一帧保留、12 秒后帧时间仍停在 30 sec；恢复 → `LIVE`，PAUSED 计数归零。
-- 关闭 probe A：旧构建落到 `CAPTURE ERROR`（“找不到任何要捕捉的显示器或窗口”）；修复后关闭 probe B 正确显示 `WINDOW CLOSED`，12 秒内重开同一窗口自动恢复 `LIVE`，A/C 不受影响。
-- 重启 Argus：关闭中的 A 显示 `Needs window`，B/C 自动恢复；再打开 picker 触发恢复后 A 自动绑定并回 `LIVE`。三窗口都在时重启，三卡按原顺序恢复。
-- AX 未授权：点 A 缩略图只激活应用并显示 banner；授予 Argus 辅助功能权限并重启后，点 A 精确前置 `Argus Probe A`，banner 消失。
+布局：
+
+- 600px 深色/浅色：状态条四项指标完整、右侧提示隐藏、卡片单列、无横向溢出。
+- 900px 深色/浅色：双列、右侧提示显示、无横向溢出；浅色下文字与状态色可读。
+
+30 分钟 soak：
+
+- 3 目标全程 `LIVE`；0/10/20/30 分钟截图均为 A/B/C 各自内容，无串流/错绑。
+- 61 个样本（30 秒间隔）：CPU 平均 12.3%（6.8–22.2%），RSS 平均 120 MB（110–148 MB）。
+- 日志：`build/soak-20261121-235849.log`。
 
 验收中发现并修复（均已 push `origin/dev`）：
 
 - `42a5b88`：目标 App 退出时 `SCStream` 可能先 `didStopWithError`；`pollFrames` 先查 `CGWindowList` 窗口消失，保证落到可恢复的 `WINDOW CLOSED`，而不是 `CAPTURE ERROR`。
 - `a120aab`：同一 bundle 有两个存活实例时，激活只检查第一个进程，可能 raise 目标未绑定的窗口；改为收集所有实例的 AX 窗口，再走同一套唯一标题策略。
+- `a1c460f`：`scripts/soak.sh` 的 awk 把 CPU 与 RSS 拼成一列；改为两字段独立输出，soak CSV 可用。
 
-待完成：
+证据：
 
-- 单进程双窗口（标题不同/重复）的精确切窗与 ambiguous banner 实测。
-- `CONNECTING` 时暂停、最小化窗口、600/900 复测。
-- 3 目标 30 分钟 soak（`scripts/soak.sh 30`）。
+- 布局：`build/argus-m2-600.png`、`build/argus-m2-900.png`、`build/argus-m2-600-light.png`、`build/argus-m2-900-light.png`。
+- 最终三目标：`build/argus-m2-final.png`。
+- soak：`build/soak-20261121-235849.log`。
+- probe 与测试 `targets.json` 验收后删除，不进入仓库。
 
 ## 未接线
 
@@ -112,14 +113,15 @@ swift build -> Build complete!
 swift test  -> 39 tests, 0 failures（ArgusCoreTests 35 + ArgusTests 4）
                （M2a 17：7 TargetRestorer + 5 PersistedTarget/上限 + 1 卡片身份 + 4 TargetFileStore；
                  M2b 7：WindowMatchPolicy；M2c 未新增纯逻辑单测）
-./scripts/make-app.sh -> build/Argus.app (com.bayernjf.argus, Authority=Argus Dev, 2026-11-21 22:40)
+./scripts/make-app.sh -> build/Argus.app (com.bayernjf.argus, Authority=Argus Dev；修复后重新打包 2026-11-21 23:5x)
 M2c 布局烟测 -> 3 张假 bundle 的 NEEDS WINDOW 卡片（无真实窗口，未捕获任何用户内容）：
                  600×700 单列、状态条 4 项指标完整且提示隐藏；900×700 双列、提示显示；均无横向溢出。
                  截图 build/argus-m2c-3cards-600.png / -900.png（未提交）；演示 targets.json 已删除
 M1 实机验收 -> 上述 2026-11-21 结果（截图取证 /tmp/argus-*.png，验收会话留存）
-M2a 实机验收 -> 未执行；上方「M2a 待实机验收」为验收清单
-M2b 实机验收 -> 未执行；上方「M2b 待实机验收」为验收清单；AX 真实 raise 不能用 mock 代替
-M2c 实机验收 -> 未执行；上方「M2c 待实机验收」为验收清单；30 分钟 soak 未跑
+M2a 实机验收 -> 3 目标重启恢复、多窗口不猜、上限 3 均通过（见上方 §M2 实机验收结果）
+M2b 实机验收 -> AX 精确 raise、未授权降级、重复标题 ambiguous、标题唯一精确切均通过；点击 10/10 为 97–115 ms
+M2c 实机验收 -> WINDOW CLOSED/自动重建/暂停恢复/600/900 深浅色通过；30 分钟 soak 3 目标全程 LIVE
+30 min soak -> 61 samples，CPU avg 12.3%（6.8–22.2%），RSS avg 120 MB（110–148 MB）；build/soak-20261121-235849.log
 ```
 
 > 2026-11-21 事故记录：验收自动化期间误关了一个正在运行 `codebuddy` 的 Terminal 窗口（终止其 node 进程）；已向 owner 说明，重启 codebuddy 即可恢复。教训：窗口自动化只操作自建窗口。
