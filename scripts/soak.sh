@@ -9,7 +9,7 @@ case "$minutes" in ''|*[!0-9]*) echo "usage: scripts/soak.sh [minutes] [interval
 case "$interval" in ''|*[!0-9]*) echo "usage: scripts/soak.sh [minutes] [interval_seconds]" >&2; exit 2;; esac
 out="build/soak-$(date +%Y%m%d-%H%M%S).log"
 mkdir -p build
-echo "time,elapsed_min,pid,cpu_percent,rss_kb" > "$out"
+echo "time,elapsed_min,pid,cpu_percent,rss_kb,footprint_mb" > "$out"
 start=$(date +%s)
 echo "[soak] logging to $out (${minutes}m, every ${interval}s)"
 
@@ -19,9 +19,11 @@ while :; do
   elapsed=$(( (now - start) / 60 ))
   if [ -n "$pid" ]; then
     stats="$(ps -o %cpu=,rss= -p "$pid" | awk '{printf "%s,%s", $1, $2}')"
-    echo "$(date +%H:%M:%S),$elapsed,$pid,$stats" >> "$out"
+    footprint_mb="$(footprint "$pid" 2>/dev/null | awk '/Footprint:/ {for (i=1; i<=NF; i++) if ($i=="Footprint:") {print $(i+1); exit}}')"
+    [ -n "$footprint_mb" ] || footprint_mb="-"
+    echo "$(date +%H:%M:%S),$elapsed,$pid,$stats,$footprint_mb" >> "$out"
   else
-    echo "$(date +%H:%M:%S),$elapsed,-,0,0" >> "$out"
+    echo "$(date +%H:%M:%S),$elapsed,-,0,0,-" >> "$out"
     echo "[soak] Argus is not running; logging a zero sample" >&2
   fi
   [ "$elapsed" -ge "$minutes" ] && break
