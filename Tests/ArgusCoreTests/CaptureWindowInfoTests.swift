@@ -62,6 +62,13 @@ final class CaptureWindowInfoTests: XCTestCase {
         XCTAssertNotEqual(source.makeTarget().id, source.makeTarget().id)
     }
 
+    func testMakeTargetKeepsProvidedIdentity() {
+        let id = UUID()
+        let target = window(id: 42).makeTarget(id: id)
+        XCTAssertEqual(target.id, id, "restored cards must keep their identity")
+        XCTAssertEqual(target.note, "window #42")
+    }
+
     func testExcludingMonitoredDropsPickedWindows() {
         let windows = [window(id: 1), window(id: 2)]
         let result = CaptureWindowInfo.excludingMonitored(windows, monitoredWindowIDs: [2])

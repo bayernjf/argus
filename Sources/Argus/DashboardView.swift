@@ -18,16 +18,30 @@ struct DashboardView: View {
             header
             statusStrip
 
+            if let notice = store.activationNotice {
+                activationBanner(notice)
+            }
+
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 16) {
                     ForEach(store.targets) { target in
                         MonitoringCardView(
                             target: target,
                             frameImage: store.latestFrames[target.id],
-                            captureState: store.captureStates[target.id]
-                        ) {
-                            store.removeTarget(id: target.id)
-                        }
+                            captureState: store.captureStates[target.id],
+                            onRemove: {
+                                store.removeTarget(id: target.id)
+                            },
+                            onReselect: {
+                                store.beginRebind(targetID: target.id)
+                            },
+                            onActivate: {
+                                store.activateTarget(id: target.id)
+                            },
+                            onTogglePause: {
+                                store.togglePause(id: target.id)
+                            }
+                        )
                     }
 
                     if store.targets.isEmpty {
@@ -40,13 +54,15 @@ struct DashboardView: View {
             footer
         }
         .padding(24)
-        .frame(minWidth: 900, minHeight: 600)
+        .frame(minWidth: 600, minHeight: 600)
         .background(Color(nsColor: .windowBackgroundColor))
-        .sheet(isPresented: $store.isShowingPicker) {
+        .sheet(isPresented: $store.isShowingPicker, onDismiss: store.pickerDidDismiss) {
             WindowPickerSheet(store: store)
         }
         .task {
             await store.refreshPermission()
+            await store.refreshAccessibility()
+            await store.restorePersistedTargets()
         }
     }
 
@@ -63,27 +79,69 @@ struct DashboardView: View {
 
             Spacer()
 
+            if store.accessibilityState != .granted {
+                Button {
+                    Task { await store.requestAccessibility() }
+                } label: {
+                    Label("Enable exact switching", systemImage: "hand.raised")
+                }
+                .controlSize(.small)
+                .help("Accessibility permission lets Argus raise the exact window instead of only bringing the app forward.")
+            }
+
             Button {
                 store.openPicker()
             } label: {
                 Label("Add target", systemImage: "plus")
             }
-            .help("Pick an on-screen window to monitor")
+            .disabled(!store.canAddTarget)
+            .help(store.canAddTarget
+                  ? "Pick an on-screen window to monitor"
+                  : "Target limit reached (\(ArgusCore.TargetLimits.maximumMonitoredTargets)). Remove a card to add another.")
         }
     }
 
     private var statusStrip: some View {
-        HStack(spacing: 18) {
-            metric("Targets", value: "\(store.targets.count)")
-            metric("Completed", value: "\(store.targets.filter { $0.phase == .completed }.count)")
-            metric("Streaming", value: "\(store.targets.filter { $0.phase == .streaming }.count)")
-            Spacer()
-            Text("M1: live single-window capture · reply detection lands in M3")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        ViewThatFits(in: .horizontal) {
+            statusStripContent(showsHint: true)
+            statusStripContent(showsHint: false)
         }
         .padding(14)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    @ViewBuilder
+    private func statusStripContent(showsHint: Bool) -> some View {
+        HStack(spacing: 18) {
+            metric("Targets", value: "\(store.targets.count)/\(TargetLimits.maximumMonitoredTargets)")
+            metric("Paused", value: "\(store.pausedTargetIDs.count)")
+            metric("Completed", value: "\(store.targets.filter { $0.phase == .completed }.count)")
+            metric("Streaming", value: "\(store.targets.filter { $0.phase == .streaming }.count)")
+            Spacer(minLength: 12)
+            if showsHint {
+                Text("M2c: pause & auto-recover · detection lands in M3")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private func activationBanner(_ notice: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "info.circle")
+                .foregroundStyle(.secondary)
+            Text(notice)
+                .font(.callout)
+            Spacer()
+            Button("Dismiss") {
+                store.clearActivationNotice()
+            }
+            .buttonStyle(.plain)
+            .font(.caption)
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
     }
 
     private var emptyHint: some View {

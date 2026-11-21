@@ -24,6 +24,11 @@ let package = Package(
             name: "ArgusCoreTests",
             dependencies: ["ArgusCore"],
             path: "Tests/ArgusCoreTests"
+        ),
+        .testTarget(
+            name: "ArgusTests",
+            dependencies: ["Argus"],
+            path: "Tests/ArgusTests"
         )
     ]
 )
