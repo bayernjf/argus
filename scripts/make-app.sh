@@ -3,11 +3,11 @@
 # Screen Recording TCC grants are keyed to the app bundle, not the bare SPM
 # executable, so capture acceptance always runs through this bundle.
 #
-# Signing: the default ad-hoc identity ("--sign -") keeps the bundle
-# launchable locally, but every rebuild produces a new CDHash, which macOS
-# may treat as a new app and ask for the Screen Recording grant again. For a
-# stable identity across rebuilds, create a self-signed Code Signing
-# certificate in Keychain Access once and run:
+# Signing: a local self-signed "Argus Dev" identity is preferred when present,
+# because Screen Recording TCC grants are keyed to the signing identity and
+# ad-hoc rebuilds produce a new CDHash each time. If no such identity exists,
+# the script falls back to ad-hoc ("--sign -") so local builds still work. To
+# create a stable certificate once in Keychain Access:
 #   ARGUS_SIGN_IDENTITY="Argus Dev" scripts/make-app.sh
 #
 # Usage: scripts/make-app.sh            # release build
@@ -24,8 +24,18 @@ fi
 
 version="${ARGUS_VERSION:-0.1.0}"
 bundle_id="${ARGUS_BUNDLE_ID:-com.bayernjf.argus}"
-sign_identity="${ARGUS_SIGN_IDENTITY:--}"
 app="build/Argus.app"
+
+# Default to the machine-local stable identity when present: TCC remembers
+# grants by signing identity, so ad-hoc rebuilds (new CDHash each time) drop
+# the Screen Recording grant while a fixed self-signed cert keeps it.
+if [ -n "${ARGUS_SIGN_IDENTITY:-}" ]; then
+  sign_identity="$ARGUS_SIGN_IDENTITY"
+elif security find-identity -v -p codesigning 2>/dev/null | grep -q '"Argus Dev"'; then
+  sign_identity="Argus Dev"
+else
+  sign_identity="-"
+fi
 
 echo "[make-app] swift build -c $config"
 swift build -c "$config" --product Argus
