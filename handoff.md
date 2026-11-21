@@ -1,7 +1,7 @@
 # handoff — Argus
 
 - 更新日期：2026-11-22
-- 当前阶段：M3「回复完成检测 v1」已完成（2026-11-22 owner 接受“合成 fixture + 豆包工作真实视觉链路”为退出证据）。M1/M2/M3 核心已合入 `main`；豆包工作 Profile 与验收记录在 `dev`，`main` 仍为 `6a6f43c`，AX 增强与 ChatGPT/Claude/Cursor 标定延后 M4。
+- 当前阶段：M3「回复完成检测 v1」已完成（2026-11-22 owner 接受“合成 fixture + 豆包工作真实视觉链路”为退出证据）。M1/M2/M3 核心已合入 `main`；豆包工作 Profile 与验收记录在 `dev`，`main` 合并前为 `6a6f43c`，本次状态更新随 PR 合入后以 merge commit 为准；AX 增强与 ChatGPT/Claude/Cursor 标定延后 M4。
 - Tier：2
 
 ## 当前状态
@@ -166,8 +166,8 @@ Profile：
 
 ## M3 交付状态（2026-11-22）
 
-- M3 代码/Profile/验收记录：`941cc69`（检测管线与 Dashboard）、`f342fdf`（合成 fixture 与构建脚本）、`1bfed2d`（M3 文档）、`335edbc`（豆包工作 Profile）、`dcb201b`（豆包工作视觉验收）；本次 M3 状态更新在 `dev` 的后续提交。
-- `dev` 已推送；`main` 仍为 `6a6f43c`，本次状态更新待 PR 合入。
+- M3 代码/Profile/验收记录：`941cc69`（检测管线与 Dashboard）、`f342fdf`（合成 fixture 与构建脚本）、`1bfed2d`（M3 文档）、`335edbc`（豆包工作 Profile）、`dcb201b`（豆包工作视觉验收）、`a227092`（M3 状态收口）。
+- `dev` 已推送至 `a227092`；`main` 合并前为 `6a6f43c`，本次状态更新随 PR 合入后以 merge commit 为准。
 - PR #9：`https://github.com/bayernjf/argus/pull/9`，CI `build-and-test` 通过（两次检查均 SUCCESS）；merge `57dd732`。
 - PR #10：`https://github.com/bayernjf/argus/pull/10`；merge `6a6f43c`，`main` 当前为该提交。
 - 清理：fixture 进程与 Argus 测试进程已停止；测试 `targets.json` 归档到 `/tmp/argus-m3-targets-final.json`；`/tmp/ArgusM3Fixtures` 已删除；证据日志与截图保留；豆包工作合成会话与误发消息已由用户手动删除。
@@ -180,7 +180,7 @@ Profile：
 
 ## 下一步
 
-1. M3 状态更新在 `dev`；如需对外一致，开 PR 合入 `main`（`main` 仍为 `6a6f43c`）。
+1. M3 状态更新已提交 `a227092`；开 PR 合入 `main`（合并后以 merge commit 为准）。
 2. 进入 M4：4 小时 3 目标 soak、活跃 OCR CPU、隐私/脱敏检查。
 3. M4 内补 AX 增强、生成中长停顿真实负例、ChatGPT/Claude/Cursor 标定；这些不阻塞 M4 起步。
 
