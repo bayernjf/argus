@@ -4,7 +4,7 @@ import SwiftUI
 struct DashboardView: View {
     @State private var store: DashboardStore
 
-    init(store: DashboardStore = DashboardStore()) {
+    init(store: DashboardStore = DashboardStore(profileForBundle: ReplyProfileRegistry.profileForBundle)) {
         _store = State(initialValue: store)
     }
 
