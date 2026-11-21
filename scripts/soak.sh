@@ -18,7 +18,7 @@ while :; do
   now=$(date +%s)
   elapsed=$(( (now - start) / 60 ))
   if [ -n "$pid" ]; then
-    stats="$(ps -o %cpu=,rss= -p "$pid" | awk '{gsub(/ /,""); print $1","$2}')"
+    stats="$(ps -o %cpu=,rss= -p "$pid" | awk '{printf "%s,%s", $1, $2}')"
     echo "$(date +%H:%M:%S),$elapsed,$pid,$stats" >> "$out"
   else
     echo "$(date +%H:%M:%S),$elapsed,-,0,0" >> "$out"
