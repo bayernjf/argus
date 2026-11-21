@@ -1,7 +1,7 @@
 # handoff — Argus
 
 - 更新日期：2026-11-22
-- 当前阶段：M3「回复完成检测 v1」进行中——核心、信号提取、Dashboard 接入与合成 fixture 正/负验收已完成，代码与文档已 push/merge 到 `main`；真实客户端 Profile 标定未完成，因此 M3 不宣称完成。M1/M2 已完成并合入 `main`。
+- 当前阶段：M3「回复完成检测 v1」进行中——核心、信号提取、Dashboard 接入、合成 fixture 正/负验收与豆包工作真实客户端视觉链路已完成，代码与文档已 push/merge 到 `main`；豆包工作的 AX 增强路径未验证，ChatGPT/Claude/Cursor 尚未标定，因此 M3 不宣称完成。M1/M2 已完成并合入 `main`。
 - Tier：2
 
 ## 当前状态
@@ -127,6 +127,42 @@ UI 与布局：
 - 3 个合成 fixture bundle 是否可替代 M3 要求的“3 个应用”；真实客户端 ROI/control ROI/settle 标定是否进入 M3 或顺延到 M4。
 
 
+## M3 豆包工作真实客户端视觉链路验收（2026-11-22，合成会话）
+
+结论：豆包工作的视觉/OCR 链路通过正例与静态负例；AX 增强路径不可用，因此本次只算第一证据源验收，不算 AX 验收。
+
+客户端与边界：
+
+- `/Applications/DoubaoWork.app`，bundle `com.work.pc.doubao`，Chromium 内核。
+- 使用“文件 → 新建对话”（⌘N）创建独立会话，chat id `38455735961348354`；只使用合成提示词，已有会话内容未用于本次结论或落盘。
+- AX 限制：窗口级 AX 树只暴露窗口/边框控件，不暴露 Web 内容里的 Stop；`AXStopControlProbe` 不适合作为该客户端主信号。
+
+Profile：
+
+- `ReplyProfileRegistry.doubaoWork`：replyROI x=0.17 y=0.08 w=0.80 h=0.78；controlROI x=0.88 y=0.90 w=0.07 h=0.07；settle 1.0s；OCR 0.5s；changeThreshold 0.005；minConfidence 0.6。
+- 未加 ROI 的全窗基线出现 `Completed → Streaming → Settling` 循环；加 ROI 后空白/静态会话稳定 `Idle`。
+
+正例：
+
+- 发送时间 1795286002.31；`Idle` 1795286002.32 → `Streaming` 1795286007.73 → `Settling` 1795286008.75 → `Completed` 1795286009.82。
+- Settling→Completed 1.07s；按最后可见变化近似 ≤1.1s，低于 PRD §9 草案 ≤3s。
+- 完成后 30s+ 保持 `Completed`，未重新进入 Streaming。
+- 日志 `/tmp/argus-doubao-positive-roi.log`；Dashboard `/tmp/argus-doubao-completed.png`。
+
+静态负例：
+
+- Argus 重启后同一已完成会话从 `Idle` 开始；1795286077.14–1795286089.06 共 11.9s 全 `Idle`，无 Streaming/Settling/Completed。
+- 日志 `/tmp/argus-doubao-static-idle.log`；Dashboard `/tmp/argus-doubao-static-idle.png`。
+
+测试与构建：
+
+- `swift build` 通过；`swift test` 48 个 `ArgusCoreTests` 0 failures；`swift test --filter ArgusTests` 11 个 0 failures；合计 59。
+- 新增 `Sources/Argus/ReplyProfileRegistry.swift` 与 `Tests/ArgusTests/ReplyProfileRegistryTests.swift`；`DashboardView` 默认注入 registry。
+
+未覆盖：
+
+- 生成中长停顿/思考停顿的真实负例；豆包工作 AX 增强；ChatGPT/Claude/Cursor；3 个真实客户端矩阵。
+
 ## M3 交付状态（2026-11-22）
 
 - 代码提交：`941cc69`（检测管线与 Dashboard 接入）、`f342fdf`（合成 fixture 与构建脚本）、`1bfed2d`（M3 文档）。
@@ -137,13 +173,13 @@ UI 与布局：
 
 ## 未接线
 
-- 真实客户端 Target Profile：ChatGPT/Claude/Cursor 的 ROI、control ROI、settleDuration、阈值未标定；当前所有目标走 `ReplyProfile.generic`（control ROI 为空，视觉 Stop 关键词不启用）。
+- 真实客户端 Target Profile：豆包工作视觉 Profile 已接入（`ReplyProfileRegistry.doubaoWork`），但 AX 增强不可用；ChatGPT/Claude/Cursor 的 ROI、control ROI、settleDuration、阈值未标定；未知 bundle 继续回退 `ReplyProfile.generic`。
 - 最小化窗口的 SCStream 行为（docs/02 开放问题，M4 soak 记录）。
 - 签名、公证、DMG/ZIP 与内测分发（M5；bundle 已就绪，签名身份方案已定）。
 
 ## 下一步
 
-1. 由 owner 确认：合成 fixture 是否可作 M3 退出证据；若不可，先标定至少 1 个真实客户端 Profile 再收口。三个候选 app 本机都已安装：ChatGPT、Claude、Cursor。
+1. 由 owner 确认：合成 fixture 是否可作 M3 退出证据；豆包工作视觉 Profile 已通过，但 AX 路径和“3 个真实客户端”仍未覆盖。
 2. 如需真实标定，先在空会话/合成提示词上确认 ROI、control ROI、settleDuration 与阈值，不读取用户已有对话。
 3. M3 收口后再进 M4：4 小时 3 目标 soak、活跃 OCR CPU、隐私/脱敏检查。
 
