@@ -18,7 +18,8 @@ enum WindowEnumerator {
                 appName: app.applicationName,
                 appBundleIdentifier: app.bundleIdentifier,
                 windowTitle: scWindow.title ?? "",
-                frame: scWindow.frame
+                frame: scWindow.frame,
+                processID: Int32(app.processID)
             )
         }
         return CaptureWindowInfo.validTargets(from: candidates, ownBundleIdentifier: ownBundleIdentifier)

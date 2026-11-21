@@ -4,9 +4,10 @@ import Foundation
 ///
 /// The detector deliberately has a `settling` phase: a single quiet frame is
 /// not enough to call a reply complete. If the signal is missing, it reports
-/// `unknown` rather than guessing.
+/// `unknown` rather than guessing. It never exposes raw pixels or OCR text.
 public struct ReplyCompletionDetector: Sendable {
     public private(set) var phase: ReplyPhase = .idle
+    public private(set) var phaseChangedAt: Date?
     public let settleDuration: TimeInterval
 
     private var sawGenerating = false
@@ -19,9 +20,19 @@ public struct ReplyCompletionDetector: Sendable {
 
     @discardableResult
     public mutating func observe(
+        _ observation: ReplyObservation,
+        profile: ReplyProfile = .generic,
+        at date: Date = Date()
+    ) -> ReplyPhase {
+        observe(observation.activity(minConfidence: profile.minConfidence), at: date)
+    }
+
+    @discardableResult
+    public mutating func observe(
         _ activity: ReplyActivity,
         at date: Date = Date()
     ) -> ReplyPhase {
+        let previous = phase
         switch activity {
         case .generating:
             sawGenerating = true
@@ -47,17 +58,23 @@ public struct ReplyCompletionDetector: Sendable {
             }
 
         case .unknown:
-            sawGenerating = false
+            // A transient signal loss must not erase the fact that generation
+            // was observed. Clearing `sawGenerating` here would make a brief
+            // OCR failure permanently block completion on a quiet reply.
             idleSince = nil
             phase = .unknown
         }
 
+        if phase != previous {
+            phaseChangedAt = date
+        }
         return phase
     }
 
-    public mutating func reset() {
+    public mutating func reset(at date: Date? = nil) {
         sawGenerating = false
         idleSince = nil
         phase = .idle
+        phaseChangedAt = date
     }
 }
