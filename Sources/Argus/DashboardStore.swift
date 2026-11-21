@@ -610,19 +610,21 @@ final class DashboardStore {
         let existingWindowIDs = sessions.isEmpty ? Set<UInt32>() : currentWindowIDs()
         var windowClosed = false
         for (id, session) in sessions {
-            if session.isFailed {
-                captureStates[id] = .failed(session.failureMessage ?? "Capture failed")
-                deadIDs.append(id)
-                continue
-            }
-            // SCStream keeps delivering a frozen last frame when the picked
-            // window closes without sending didStopWithError (observed on
-            // macOS 27), so existence is re-checked against CGWindowList.
+            // A closing app can deliver didStopWithError and remove its
+            // window in the same beat. Window-gone wins over stream failure:
+            // it is the recoverable case (M2c), while a bare failure is not.
+            // SCStream also keeps delivering a frozen last frame when the
+            // picked window closes without an error (observed on macOS 27).
             // The .optionAll list still contains minimized windows, so a
             // minimized target is not mistaken for a closed one.
             if let windowID = targetWindowIDs[id], !existingWindowIDs.contains(windowID) {
                 captureStates[id] = .windowClosed
                 windowClosed = true
+                deadIDs.append(id)
+                continue
+            }
+            if session.isFailed {
+                captureStates[id] = .failed(session.failureMessage ?? "Capture failed")
                 deadIDs.append(id)
                 continue
             }
