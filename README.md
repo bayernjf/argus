@@ -6,15 +6,16 @@ Argus 把多个目标软件窗口收进一个 Dashboard：每个目标软件一�
 
 - 产品名：Argus（内部定名，2026-11-21）
 - Tier：Tier 2（一般项目）
-- 当前阶段：M0 仓库骨架 + 产品文档，尚未接真实捕获
+- 当前阶段：M1 代码完成（单窗口捕获 + 权限流程），待实机验收
 - 仓库：https://github.com/bayernjf/argus
 
 ## 当前状态
 
-- `ArgusCore` 已建立回复状态模型与 `ReplyCompletionDetector` 状态机。
-- SwiftUI Dashboard 已有三张 mock 监控卡片，用来看信息层级和卡片密度。
-- `swift build` 通过；`swift test` 7 个测试通过。
-- 真实窗口捕获、OCR/辅助功能信号、点击切换窗口均未接线，分别属于 M1–M3。
+- `ArgusCore` 已建立回复状态模型、`ReplyCompletionDetector` 状态机与窗口过滤逻辑。
+- M1a/M1b/M1c 已落地：`.app` bundle、窗口枚举与权限流程、单窗口 ScreenCaptureKit 捕获。
+- 卡片显示真实窗口信息与 2 FPS 内存缩略图；窗口关闭会转为失败态。
+- `swift build` 通过；`swift test` 13 个测试通过。
+- OCR/辅助功能信号与点击切窗尚未接线，分别属于 M3 与 M2。
 
 ## 文档
 
