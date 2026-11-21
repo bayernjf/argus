@@ -118,7 +118,16 @@ final class DashboardStore {
     }
 
     @objc private func appDidBecomeActive() {
-        Task { await refreshPermission() }
+        Task {
+            await refreshPermission()
+            // Returning from System Settings is the main way Screen
+            // Recording gets granted (macOS 27 shows no prompt), so retry
+            // any unresolved restored cards instead of making the user
+            // press Re-select for a permission-only failure.
+            if permissionState == .granted {
+                await restorePersistedTargets()
+            }
+        }
     }
 
     func refreshPermission() async {
