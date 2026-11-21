@@ -1,7 +1,7 @@
 # handoff — Argus
 
 - 更新日期：2026-11-21
-- 当前阶段：M2 进行中（M2a/M2b/M2c 已落码，待实机验收）；M1 已完成并通过实机验收
+- 当前阶段：M2 实机验收进行中（3 目标 LIVE、暂停/恢复、关窗重建、重启恢复、AX 精确切窗已通过；剩多窗口歧义、CONNECTING 暂停、600/900 复测与 30 分钟 soak）；M1 已完成并通过实机验收
 - Tier：2
 
 ## 当前状态
@@ -15,7 +15,7 @@
 - M2a 目标持久化与重启恢复：`PersistedTarget` / `TargetFile`（版本 1，未知版本拒读）+ `TargetFileStore`（`~/Library/Application Support/Argus/targets.json`，原子写，损坏文件隔离为 `targets.corrupt-*.json`）+ `TargetRestorer`（严格不猜）。
 - M2a 上限与状态：硬上限 3（`TargetLimits`），超限时 Add 置灰、picker 内提示；恢复失败的目标显示 `NEEDS WINDOW`，卡片内「Re-select window」/右键菜单可重新绑定，不新增第 4 张卡。
 - M2a 顺手修：`CaptureFrame.targetID` 之前是会话内随机 UUID，与卡片无关；现在由 `DashboardStore` 传入卡片 id。窗口存在性检查从「每目标每轮询一次 CGWindowList」改为「每轮询一次共享快照」。
-- M2b 点击切换：`AccessibilityWindowActivator` + `WindowMatchPolicy`；点击缩略图按 bundle 找进程、读 AX 窗口标题、先匹配后激活。唯一匹配或单窗口才 raise；多候选/无候选不激活应用，避免跳错窗口；AX 未授权时只激活应用，顶部 banner 提示授权。Accessibility 请求由状态栏「Enable exact switching」显式触发，不在点击卡片时弹系统框。
+- M2b 点击切换：`AccessibilityWindowActivator` + `WindowMatchPolicy`；点击缩略图按 bundle 收集所有同名实例的 AX 窗口并读取标题、先匹配后激活。唯一匹配或单窗口才 raise；多候选/无候选不激活应用，避免跳错窗口；AX 未授权时只激活应用，顶部 banner 提示授权。Accessibility 请求由状态栏「Enable exact switching」显式触发，不在点击卡片时弹系统框。
 - M2c 生命周期：`CaptureState` 增加 `paused` / `windowClosed`；暂停停流并保留最后一帧（卡片标注 PAUSED），恢复优先绑定原窗口、失效才走严格唯一匹配；窗口关闭后每 10 秒枚举一次，仅在同 bundle 唯一可用窗口时自动重绑，多候选继续等待；暂停、移除、重绑与启动中的竞态均有守卫，不挂载过期 SCStream。布局最小宽度 900→600，状态条用 `ViewThatFits` 在窄窗隐藏提示；新增 `scripts/soak.sh` 采样 CPU/RSS 供 3 目标 30 分钟 soak 使用。
 - 核心逻辑：`ReplyPhase` / `ReplyActivity` / `ReplyCompletionDetector`；`CaptureWindowInfo` 过滤与映射、目标恢复纯逻辑均有单测覆盖。
 - 文档：docs/03 M2 标记进行中；docs/04 FR-06/07 更新为 in_progress；docs/05 新增 ADR-013（窗口关闭可恢复、暂停冻结最后一帧）；docs/06 证据刷新到 M2c；docs/08 R-07/R-08 状态更新；docs/07 bundle id 已确认。
@@ -55,6 +55,27 @@
 - 暂停中的目标不参与自动重建；恢复时若原窗口已消失，才按严格唯一匹配重绑。
 - 600px 宽窗口：状态条隐藏右侧提示、卡片单列、无横向溢出；900px：多列正常。
 - `scripts/soak.sh 30` + 3 个目标手工跑满 30 分钟，记录 CPU/RSS 与串流/错绑情况。
+
+## M2 实机验收进展（2026-11-21，自建 probe，未捕获用户内容）
+
+已通过：
+
+- 3 目标（`/tmp/ArgusProbes/ArgusProbeA/B/C.app`）同时 `LIVE · 2 FPS`，状态条 `3/3`，Add 置灰并提示上限 3；卡片缩略图为 probe 内容。
+- A 暂停 → `PAUSED`、最后一帧保留、12 秒后帧时间仍停在 30 sec；恢复 → `LIVE`，PAUSED 计数归零。
+- 关闭 probe A：旧构建落到 `CAPTURE ERROR`（“找不到任何要捕捉的显示器或窗口”）；修复后关闭 probe B 正确显示 `WINDOW CLOSED`，12 秒内重开同一窗口自动恢复 `LIVE`，A/C 不受影响。
+- 重启 Argus：关闭中的 A 显示 `Needs window`，B/C 自动恢复；再打开 picker 触发恢复后 A 自动绑定并回 `LIVE`。三窗口都在时重启，三卡按原顺序恢复。
+- AX 未授权：点 A 缩略图只激活应用并显示 banner；授予 Argus 辅助功能权限并重启后，点 A 精确前置 `Argus Probe A`，banner 消失。
+
+验收中发现并修复（均已 push `origin/dev`）：
+
+- `42a5b88`：目标 App 退出时 `SCStream` 可能先 `didStopWithError`；`pollFrames` 先查 `CGWindowList` 窗口消失，保证落到可恢复的 `WINDOW CLOSED`，而不是 `CAPTURE ERROR`。
+- `a120aab`：同一 bundle 有两个存活实例时，激活只检查第一个进程，可能 raise 目标未绑定的窗口；改为收集所有实例的 AX 窗口，再走同一套唯一标题策略。
+
+待完成：
+
+- 单进程双窗口（标题不同/重复）的精确切窗与 ambiguous banner 实测。
+- `CONNECTING` 时暂停、最小化窗口、600/900 复测。
+- 3 目标 30 分钟 soak（`scripts/soak.sh 30`）。
 
 ## 未接线
 
