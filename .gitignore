@@ -8,3 +8,7 @@ xcuserdata/
 *.xcodeproj/xcuserdata/
 .env
 .env.local
+
+# Local bundle output and session config
+build/
+.zcode/
