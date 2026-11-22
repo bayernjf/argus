@@ -68,6 +68,7 @@ struct DashboardView: View {
         .task {
             await store.refreshPermission()
             await store.refreshAccessibility()
+            await store.prepareNotifications()
             await store.restorePersistedTargets()
         }
         .task {

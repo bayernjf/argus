@@ -6,7 +6,7 @@ Argus 把多个目标软件窗口收进一个 Dashboard：每个目标软件一�
 
 - 产品名：Argus（内部定名，2026-11-21）
 - Tier：Tier 2（一般项目）
-- 当前阶段：M4 内部 Alpha 已完成（2026-11-22）。3 目标 active OCR 4h 平均 5.92%，豆包真实视觉链路与隐私检查通过；FR-11 的 D03/D04 已实机、D01/D07 由单测覆盖
+- 当前阶段：M4 内部 Alpha 已完成（2026-11-22）。3 目标 active OCR 4h 平均 5.92%，豆包真实视觉链路与隐私检查通过；FR-11 的 D03/D04 已实机、D01/D07 由单测覆盖；M5 签名/公证/分发按“只自用”暂缓
 - 仓库：https://github.com/bayernjf/argus
 
 ## 当前状态
@@ -18,7 +18,8 @@ Argus 把多个目标软件窗口收进一个 Dashboard：每个目标软件一�
 - M3 合成 fixture 正/负验收通过：正例完成上界 1.865–2.220s；`stallAx` 4s 内保持 Streaming；`static`/`blink` 不误报 Completed。豆包工作真实视觉链路通过：Settling→Completed 1.07s，静态 11.9s Idle；AX 增强与 ChatGPT/Claude/Cursor 标定延后 M4。
 - M4 4h soak 通过：448 px / 1 fps、3 目标 active OCR，480 samples / 239.8 分钟；CPU avg 5.92%（median 5.90%、p95 6.80%、max 7.30%），RSS avg 102.3 MB（91.6–122.9 MB）；PID 全程一个，48/48 次相位采样 3/3 Streaming，无 NO_WINDOW。
 - FR-11 最小诊断页已接入：FPS、检测耗时、状态转换、D01–D08 错误码、脱敏复制。实机验证 D03_UNKNOWN 与 D04_ACTIVATION；D01/D07 由 `DiagnosticsStoreTests` 覆盖。复制文本不含窗口标题或 OCR 正文。
-- `swift build` 通过；`swift test` 74 tests / 0 failures（56 ArgusCoreTests + 18 ArgusTests）。
+- `Completed` 本地通知已接入：目标进入 `Completed` 时发 macOS 系统通知；标题/正文只含目标应用名，不含窗口标题或 OCR 正文；通知权限被拒不影响 Dashboard。
+- `swift build` 通过；`swift test` 76 tests / 0 failures（56 ArgusCoreTests + 20 ArgusTests）。
 
 ## 文档
 
@@ -75,7 +76,7 @@ argus/
 
 ```text
 swift build  -> Build complete
-swift test   -> ArgusCoreTests 56 + ArgusTests 18 = 74 tests, 0 failures
+swift test   -> ArgusCoreTests 56 + ArgusTests 20 = 76 tests, 0 failures
 ./scripts/build-m3-fixtures.sh -> build/fixtures/Apps/A-D + PhaseSampler
 ./scripts/make-app.sh -> build/Argus.app (com.bayernjf.argus, Authority=Argus Dev)
 M3 正例 -> finish→Completed 上界 A 2.072s / B 1.865s / C 2.220s
