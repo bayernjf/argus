@@ -54,6 +54,8 @@ private final class PollTaskBox: @unchecked Sendable {
 @Observable
 final class DashboardStore {
     private(set) var targets: [TargetApplication] = []
+    /// Session-only diagnostics. It never stores images or OCR text.
+    let diagnostics = DiagnosticsStore()
     private(set) var permissionState: CapturePermissionState = .notDetermined
     private(set) var accessibilityState: AccessibilityPermissionState = .notDetermined
     /// Ephemeral explanation for a degraded or failed window switch.
@@ -170,10 +172,18 @@ final class DashboardStore {
 
     func refreshPermission() async {
         permissionState = await permission.currentState()
+        diagnostics.recordPermission(
+            screen: permissionState,
+            accessibility: accessibilityState
+        )
     }
 
     func refreshAccessibility() async {
         accessibilityState = await accessibility.currentState()
+        diagnostics.recordPermission(
+            screen: permissionState,
+            accessibility: accessibilityState
+        )
     }
 
     /// User-initiated from the status strip. The prompt explains the purpose
@@ -196,12 +206,15 @@ final class DashboardStore {
         // forbids.
         switch captureStates[id] {
         case .unresolved:
+            recordDiagnosticError(.activationFailed, targetID: id)
             showActivationNotice("No window is bound to this card. Re-select it first.")
             return
         case .windowClosed:
+            recordDiagnosticError(.activationFailed, targetID: id)
             showActivationNotice("This window is closed. Re-select it or wait for it to come back.")
             return
         case .failed(let reason):
+            recordDiagnosticError(.activationFailed, targetID: id)
             showActivationNotice("Capture is down (\(reason)). Re-select or remove this target.")
             return
         default:
@@ -217,6 +230,7 @@ final class DashboardStore {
                 )
             }
         } catch {
+            recordDiagnosticError(.activationFailed, targetID: id)
             showActivationNotice(describeActivationError(error, target: target))
         }
     }
@@ -235,6 +249,19 @@ final class DashboardStore {
             guard !Task.isCancelled else { return }
             self?.activationNotice = nil
         }
+    }
+
+    private func recordDiagnosticError(
+        _ code: DiagnosticErrorCode,
+        targetID: UUID,
+        at date: Date = Date()
+    ) {
+        guard let slot = diagnosticSlot(for: targetID) else { return }
+        diagnostics.recordError(code, targetID: targetID, slot: slot, at: date)
+    }
+
+    private func diagnosticSlot(for targetID: UUID) -> Int? {
+        targets.firstIndex(where: { $0.id == targetID }).map { $0 + 1 }
     }
 
     private func describeActivationError(_ error: Error, target: TargetApplication) -> String {
@@ -352,6 +379,7 @@ final class DashboardStore {
         }
         latestFrames.removeValue(forKey: id)
         captureStates.removeValue(forKey: id)
+        diagnostics.forget(targetID: id)
         persistedRecords.removeAll { $0.id == id }
         if rebindTargetID == id {
             rebindTargetID = nil
@@ -542,6 +570,7 @@ final class DashboardStore {
             targets.append(record.makeTargetApplication())
         }
         captureStates[record.id] = .unresolved(message)
+        recordDiagnosticError(.windowUnresolved, targetID: record.id)
     }
 
     private func rebind(targetID: UUID, to window: CaptureWindowInfo) {
@@ -615,6 +644,7 @@ final class DashboardStore {
                       !pausedTargetIDs.contains(target.id)
                 else { return }
                 captureStates[target.id] = .failed(describeCaptureError(error))
+                recordDiagnosticError(.captureFailed, targetID: target.id)
             }
         }
     }
@@ -633,6 +663,7 @@ final class DashboardStore {
 
     private func pollFrames() async {
         var deadIDs: [UUID] = []
+        let now = Date()
         // Snapshot before any await: user actions can mutate `sessions`
         // while OCR is running, and an iterator over a mutated dictionary is
         // not a safe way to keep reading frames.
@@ -659,15 +690,28 @@ final class DashboardStore {
             }
             if session.isFailed {
                 captureStates[id] = .failed(session.failureMessage ?? "Capture failed")
+                recordDiagnosticError(.captureFailed, targetID: id)
                 setPhase(.unknown, for: id)
                 deadIDs.append(id)
                 continue
             }
-            guard let frame = session.latestFrame() else { continue }
+            guard let frame = session.latestFrame() else {
+                if captureStates[id] == .live,
+                   let index = targets.firstIndex(where: { $0.id == id }) {
+                    let frameAge = targets[index].lastFrameAt.map {
+                        now.timeIntervalSince($0)
+                    } ?? .infinity
+                    if frameAge > 2 {
+                        recordDiagnosticError(.noFrames, targetID: id, at: now)
+                    }
+                }
+                continue
+            }
             latestFrames[id] = frame.image
             if let index = targets.firstIndex(where: { $0.id == id }) {
                 targets[index].lastFrameAt = frame.capturedAt
             }
+            diagnostics.recordFrame(targetID: id, capturedAt: frame.capturedAt)
             await analyzeFrameIfDue(
                 targetID: id,
                 frame: frame,
@@ -692,17 +736,31 @@ final class DashboardStore {
         analyzers[id] = ReplySignalAnalyzer()
         lastDetectionAt[id] = nil
         accessibilitySignals[id] = nil
-        if let index = targets.firstIndex(where: { $0.id == id }) {
-            targets[index].phase = .idle
-            targets[index].phaseChangedAt = Date()
+        if targets.contains(where: { $0.id == id }) {
+            setPhase(.idle, for: id)
         }
     }
 
     private func setPhase(_ phase: ReplyPhase, for id: UUID, at date: Date = Date()) {
         guard let index = targets.firstIndex(where: { $0.id == id }) else { return }
-        if targets[index].phase != phase {
-            targets[index].phase = phase
-            targets[index].phaseChangedAt = date
+        let previous = targets[index].phase
+        guard previous != phase else { return }
+        targets[index].phase = phase
+        targets[index].phaseChangedAt = date
+        diagnostics.recordTransition(
+            targetID: id,
+            slot: index + 1,
+            from: previous,
+            to: phase,
+            at: date
+        )
+        if phase == .unknown {
+            diagnostics.recordError(
+                .detectionUnknown,
+                targetID: id,
+                slot: index + 1,
+                at: date
+            )
         }
     }
 
@@ -757,6 +815,10 @@ final class DashboardStore {
             profile: profile,
             accessibilityGenerating: accessibilityGenerating
         )
+        diagnostics.recordAnalysis(
+            targetID: id,
+            latency: Date().timeIntervalSince(frame.capturedAt)
+        )
 
         guard generation == captureGeneration[id],
               captureStates[id] == .live,
@@ -767,11 +829,7 @@ final class DashboardStore {
 
         let phase = detector.observe(observation, profile: currentProfile, at: Date())
         detectors[id] = detector
-        guard let index = targets.firstIndex(where: { $0.id == id }) else { return }
-        if targets[index].phase != phase {
-            targets[index].phase = phase
-            targets[index].phaseChangedAt = detector.phaseChangedAt
-        }
+        setPhase(phase, for: id, at: detector.phaseChangedAt ?? Date())
     }
 
     /// Recoverable window-close path: retry a strict unique-window bind every
@@ -829,6 +887,39 @@ final class DashboardStore {
 
     private func describeCaptureError(_ error: Error) -> String {
         (error as? CaptureSessionError)?.description ?? error.localizedDescription
+    }
+
+    // MARK: Diagnostics
+
+    func diagnosticReport(now: Date = Date()) -> DiagnosticReport {
+        diagnostics.makeReport(
+            targets: targets,
+            captureStates: captureStates,
+            screenRecording: permissionState,
+            accessibility: accessibilityState,
+            appVersion: appVersion,
+            osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            now: now
+        )
+    }
+
+    func diagnosticText(now: Date = Date()) -> String {
+        diagnosticReport(now: now).redactedText()
+    }
+
+    private var appVersion: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+        switch (version, build) {
+        case let (version?, build?):
+            return "\(version) (\(build))"
+        case let (version?, nil):
+            return version
+        case let (nil, build?):
+            return "dev (\(build))"
+        case (nil, nil):
+            return "dev"
+        }
     }
 
     func openScreenRecordingSettings() {

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct DashboardView: View {
     @State private var store: DashboardStore
+    @State private var showingDiagnostics = false
 
     init(store: DashboardStore = DashboardStore(profileForBundle: ReplyProfileRegistry.profileForBundle)) {
         _store = State(initialValue: store)
@@ -119,7 +120,7 @@ struct DashboardView: View {
             metric("Streaming", value: "\(store.targets.filter { $0.phase == .streaming }.count)")
             Spacer(minLength: 12)
             if showsHint {
-                Text("M3: frame diff + OCR · Accessibility optional")
+                Text("M4: frame diff + OCR · diagnostics local-only")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -175,6 +176,16 @@ struct DashboardView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
+            Button {
+                showingDiagnostics = true
+            } label: {
+                Label("Diagnostics", systemImage: "stethoscope")
+            }
+            .buttonStyle(.plain)
+            .font(.caption)
+            .sheet(isPresented: $showingDiagnostics) {
+                DiagnosticsView(store: store)
+            }
             Text("P-01 / Tier 2")
                 .font(.caption)
                 .foregroundStyle(.secondary)
