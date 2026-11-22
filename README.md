@@ -6,7 +6,7 @@ Argus 把多个目标软件窗口收进一个 Dashboard：每个目标软件一�
 
 - 产品名：Argus（内部定名，2026-11-21）
 - Tier：Tier 2（一般项目）
-- 当前阶段：M4 内部 Alpha 进行中（M3 已完成并合入 `main`；4h soak 已完成，FR-11 诊断页已接入；CPU 目标未达，M4 尚未收口）
+- 当前阶段：M4 内部 Alpha 已完成（2026-11-22）。3 目标 active OCR 4h 平均 5.92%，豆包真实视觉链路与隐私检查通过；FR-11 的 D03/D04 已实机、D01/D07 由单测覆盖
 - 仓库：https://github.com/bayernjf/argus
 
 ## 当前状态
@@ -16,9 +16,9 @@ Argus 把多个目标软件窗口收进一个 Dashboard：每个目标软件一�
 - M2 已实机验收：目标持久化与严格不猜恢复、3 目标上限、点击缩略图 AX 精确切窗、暂停/恢复冻结最后一帧、窗口关闭 10 秒重建、600/900 深浅色；3 目标 30 分钟 soak 全程 LIVE。
 - M3 已完成：视觉帧差 + Vision OCR 文本哈希 + 可选 AX Stop 控件；每目标 `ReplyProfile` 参数；豆包工作视觉 Profile 已接入；Dashboard 显示 `Streaming / Settling / Completed / Unknown` 与最近状态时间。
 - M3 合成 fixture 正/负验收通过：正例完成上界 1.865–2.220s；`stallAx` 4s 内保持 Streaming；`static`/`blink` 不误报 Completed。豆包工作真实视觉链路通过：Settling→Completed 1.07s，静态 11.9s Idle；AX 增强与 ChatGPT/Claude/Cursor 标定延后 M4。
-- M4 4h soak 完成：480 samples、PID 全程稳定；CPU avg 19.6%（p95 30.9%，max 40.3%），footprint 128–159 MB，无崩溃/无内存持续增长。CPU ≤8% 目标未达；phase 43/48，04:06–04:31 有 25 分钟窗口不可见空档。
-- FR-11 最小诊断页已接入并实机验证：FPS、检测耗时、状态转换、D01–D08 错误码、脱敏复制；关闭 fixture A 后实测 `D03_UNKNOWN`，复制文本不含窗口标题或 OCR 正文。
-- `swift build` 通过；`swift test` 65 tests / 0 failures（50 ArgusCoreTests + 15 ArgusTests）。
+- M4 4h soak 通过：448 px / 1 fps、3 目标 active OCR，480 samples / 239.8 分钟；CPU avg 5.92%（median 5.90%、p95 6.80%、max 7.30%），RSS avg 102.3 MB（91.6–122.9 MB）；PID 全程一个，48/48 次相位采样 3/3 Streaming，无 NO_WINDOW。
+- FR-11 最小诊断页已接入：FPS、检测耗时、状态转换、D01–D08 错误码、脱敏复制。实机验证 D03_UNKNOWN 与 D04_ACTIVATION；D01/D07 由 `DiagnosticsStoreTests` 覆盖。复制文本不含窗口标题或 OCR 正文。
+- `swift build` 通过；`swift test` 74 tests / 0 failures（56 ArgusCoreTests + 18 ArgusTests）。
 
 ## 文档
 
@@ -75,15 +75,15 @@ argus/
 
 ```text
 swift build  -> Build complete
-swift test   -> ArgusCoreTests 50 + ArgusTests 15 = 65 tests, 0 failures
+swift test   -> ArgusCoreTests 56 + ArgusTests 18 = 74 tests, 0 failures
 ./scripts/build-m3-fixtures.sh -> build/fixtures/Apps/A-D + PhaseSampler
 ./scripts/make-app.sh -> build/Argus.app (com.bayernjf.argus, Authority=Argus Dev)
 M3 正例 -> finish→Completed 上界 A 2.072s / B 1.865s / C 2.220s
 M3 负例 -> stallAx 4.002s 内始终 Streaming；static/blink 全程 Idle
 M3 豆包工作 -> Settling→Completed 1.07s；静态 11.9s 全程 Idle
-M4 4h soak -> 480 samples / 240 min；PID 稳定；CPU avg 19.6%（p95 30.9、max 40.3）；
-              footprint 128–159 MB；无崩溃/无持续增长；CPU ≤8% 未达；phase 43/48
-M4 诊断 -> 3 targets 2.0 fps、detect 79–431ms；D03_UNKNOWN 实机可见；Copy 文本无窗口标题/OCR
+M4 4h soak -> 480 samples / 239.8 min；PID 84290 稳定；CPU avg 5.92%（p95 6.80、max 7.30）；
+              RSS avg 102.3 MB（91.6–122.9）；48/48 相位 3/3 Streaming；无 NO_WINDOW
+M4 诊断 -> D03_UNKNOWN / D04_ACTIVATION 实机可见；D01/D07 单测覆盖；Copy 文本无窗口标题/OCR
 ```
 
-M1/M2/M3 已实机验收，M4 4h soak 与诊断页正常态/`D03_UNKNOWN` 已实测；证据见 [handoff.md](handoff.md)。M3 的验收口径是“合成 fixture + 豆包工作真实视觉链路”；AX 增强与 ChatGPT/Claude/Cursor 标定延后 M4。M4 尚未收口，CPU 目标与诊断错误矩阵待补。涉及权限、目标窗口和人工观察的结论必须另附记录，不用 mock 测试代替。
+M1–M4 已实机验收；M4 证据见 [handoff.md](handoff.md)，CPU/4h 日志在 `build/soak-20261122-161107.log`、`build/soak-cputime-20261122-final3.log`。M4 的验收口径是“合成 fixture + 豆包工作真实视觉链路”；D01/D07 未做破坏性实机诱发，由单测覆盖。ChatGPT/Claude/Cursor 标定与 AX 增强仍按计划后移。涉及权限、目标窗口和人工观察的结论必须另附记录，不用 mock 测试代替。
