@@ -19,6 +19,7 @@ Argus 把多个目标软件窗口收进一个 Dashboard：每个目标软件一�
 - M4 4h soak 通过：448 px / 1 fps、3 目标 active OCR，480 samples / 239.8 分钟；CPU avg 5.92%（median 5.90%、p95 6.80%、max 7.30%），RSS avg 102.3 MB（91.6–122.9 MB）；PID 全程一个，48/48 次相位采样 3/3 Streaming，无 NO_WINDOW。
 - FR-11 最小诊断页已接入：FPS、检测耗时、状态转换、D01–D08 错误码、脱敏复制。实机验证 D03_UNKNOWN 与 D04_ACTIVATION；D01/D07 由 `DiagnosticsStoreTests` 覆盖。复制文本不含窗口标题或 OCR 正文。
 - `Completed` 本地通知已接入：目标进入 `Completed` 时发 macOS 系统通知；标题/正文只含目标应用名，不含窗口标题或 OCR 正文；通知权限被拒不影响 Dashboard。本机系统日志已确认通知请求 `hasError: 0`、`alertStyle: banner` 并进入通知历史（`build/notify-runtime-20261122.log`）。
+- App 图标已接入：`Resources/AppIcon.icns` 通过 `CFBundleIconFile` 打进 `build/Argus.app`；Dock 实测显示正常。品牌符号与备选方向存于 `Resources/Brand/`。
 - `swift build` 通过；`swift test` 76 tests / 0 failures（56 ArgusCoreTests + 20 ArgusTests）。
 
 ## 文档
@@ -56,6 +57,7 @@ argus/
 │   ├── ArgusCore/          # 纯模型、捕获/激活协议、匹配与恢复逻辑、回复状态机
 │   └── Argus/              # SwiftUI、ScreenCaptureKit、Accessibility、权限与文件存储
 ├── Tests/ArgusCoreTests/   # 状态机、窗口过滤、持久化与恢复回归测试
+├── Resources/              # AppIcon.icns 与品牌资产
 ├── scripts/make-app.sh     # 组装并签名 build/Argus.app
 ├── scripts/soak.sh         # 3 目标 soak 的 CPU/RSS 采样（手工加目标）
 └── docs/                   # PRD、架构、里程碑、功能点、ADR、测试与发布
