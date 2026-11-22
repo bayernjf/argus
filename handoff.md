@@ -1,7 +1,7 @@
 # handoff — Argus
 
 - 更新日期：2026-11-22
-- 当前阶段：M4「内部 Alpha」已完成（2026-11-22）。448 px / 1 fps 的 3 目标 active OCR 4h 平均 5.92%；豆包真实 OCR、隐私检查、D03/D04 诊断实机通过，D01/D07 由单测覆盖。M3 已完成并合入 `main`，merge `0b33a53`；M4 在 `dev`，待 PR。
+- 当前阶段：M4「内部 Alpha」已完成（2026-11-22）。448 px / 1 fps 的 3 目标 active OCR 4h 平均 5.92%；豆包真实 OCR、隐私检查、D03/D04 诊断实机通过，D01/D07 由单测覆盖。M3 已完成并合入 `main`，merge `0b33a53`；M4 已通过 PR #12 合入 `main`，merge `195d986`。
 - Tier：2
 
 ## 当前状态
@@ -173,6 +173,7 @@ Profile：
 - PR #9：`https://github.com/bayernjf/argus/pull/9`，CI `build-and-test` 通过（两次检查均 SUCCESS）；merge `57dd732`。
 - PR #10：`https://github.com/bayernjf/argus/pull/10`；merge `6a6f43c`。
 - PR #11：`https://github.com/bayernjf/argus/pull/11`；merge `0b33a53`。
+- PR #12：`https://github.com/bayernjf/argus/pull/12`；merge `195d986`，CI `build-and-test` 通过。
 - 清理：fixture 进程与 Argus 测试进程已停止；测试 `targets.json` 归档到 `/tmp/argus-m3-targets-final.json`；`/tmp/ArgusM3Fixtures` 已删除；证据日志与截图保留；豆包工作合成会话与误发消息已由用户手动删除。
 
 ## M4 内部 Alpha（已完成，2026-11-22）
