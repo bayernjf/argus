@@ -6,7 +6,11 @@ import AppKit
 import ApplicationServices
 
 let phases: Set<String> = ["Idle", "Streaming", "Settling", "Completed", "Unknown"]
-let targets = ["Argus Fixture A", "Argus Fixture B", "Argus Fixture C"]
+let targetGroups: [(label: String, names: [String])] = [
+    ("A", ["Argus Soak A", "Argus Fixture A"]),
+    ("B", ["Argus Soak B", "Argus Fixture B"]),
+    ("C", ["Argus Soak C", "Argus Fixture C"])
+]
 let duration = Double(CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "30") ?? 30
 let start = Date()
 
@@ -38,13 +42,13 @@ func snapshot() -> String {
     var texts: [String] = []
     collectTexts(window, into: &texts)
     var result: [String] = []
-    for target in targets {
-        if let index = texts.firstIndex(where: { $0 == target }),
+    for group in targetGroups {
+        if let index = texts.firstIndex(where: { group.names.contains($0) }),
            texts.indices.contains(index + 1),
            phases.contains(texts[index + 1]) {
-            result.append("\(target.suffix(1))=\(texts[index + 1])")
+            result.append("\(group.label)=\(texts[index + 1])")
         } else {
-            result.append("\(target.suffix(1))=?")
+            result.append("\(group.label)=?")
         }
     }
     return result.joined(separator: " ")

@@ -150,6 +150,15 @@ final class FixtureController: NSObject, NSApplicationDelegate {
     }
 
     private func tick() {
+        if mode == "soak" {
+            // M4 active-OCR soak: keep the reply short, but change a large
+            // block bar every 0.5s so frame diff and OCR both stay active.
+            chunkIndex += 1
+            let bar = String(repeating: "■", count: 1 + (chunkIndex % 30))
+            label.stringValue = "Synthetic streaming soak tick \(chunkIndex).\n\(bar)"
+            scheduleTick(after: 0.5)
+            return
+        }
         guard chunkIndex < chunks.count else {
             finish()
             return

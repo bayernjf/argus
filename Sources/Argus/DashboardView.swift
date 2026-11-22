@@ -3,6 +3,11 @@ import SwiftUI
 
 struct DashboardView: View {
     @State private var store: DashboardStore
+    @State private var showingDiagnostics = false
+    /// One clock for all cards. The thumbnail itself updates at 1 fps; the
+    /// elapsed footer only needs coarse resolution, so 2 s halves SwiftUI
+    /// invalidation cost without affecting the freshness requirement.
+    @State private var clock = Date()
 
     init(store: DashboardStore = DashboardStore(profileForBundle: ReplyProfileRegistry.profileForBundle)) {
         _store = State(initialValue: store)
@@ -29,6 +34,7 @@ struct DashboardView: View {
                             target: target,
                             frameImage: store.latestFrames[target.id],
                             captureState: store.captureStates[target.id],
+                            now: clock,
                             onRemove: {
                                 store.removeTarget(id: target.id)
                             },
@@ -63,6 +69,13 @@ struct DashboardView: View {
             await store.refreshPermission()
             await store.refreshAccessibility()
             await store.restorePersistedTargets()
+        }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                guard !Task.isCancelled else { return }
+                clock = Date()
+            }
         }
     }
 
@@ -119,7 +132,7 @@ struct DashboardView: View {
             metric("Streaming", value: "\(store.targets.filter { $0.phase == .streaming }.count)")
             Spacer(minLength: 12)
             if showsHint {
-                Text("M3: frame diff + OCR · Accessibility optional")
+                Text("M4: frame diff + OCR · diagnostics local-only")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -175,6 +188,16 @@ struct DashboardView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
+            Button {
+                showingDiagnostics = true
+            } label: {
+                Label("Diagnostics", systemImage: "stethoscope")
+            }
+            .buttonStyle(.plain)
+            .font(.caption)
+            .sheet(isPresented: $showingDiagnostics) {
+                DiagnosticsView(store: store)
+            }
             Text("P-01 / Tier 2")
                 .font(.caption)
                 .foregroundStyle(.secondary)

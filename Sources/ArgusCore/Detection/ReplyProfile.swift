@@ -46,6 +46,10 @@ public struct ReplyProfile: Codable, Hashable, Sendable, Identifiable {
     public var changeThreshold: Double
     public var stopKeywords: [String]
     public var minConfidence: Double
+    /// For chat UIs with right-aligned user bubbles: fingerprint only text
+    /// below the latest right-aligned prompt, so a new prompt is not mistaken
+    /// for assistant reply growth.
+    public var answerTextBelowPrompt: Bool
 
     public init(
         id: String,
@@ -56,7 +60,8 @@ public struct ReplyProfile: Codable, Hashable, Sendable, Identifiable {
         ocrInterval: TimeInterval = 1.0,
         changeThreshold: Double = 0.005,
         stopKeywords: [String] = [],
-        minConfidence: Double = 0.6
+        minConfidence: Double = 0.6,
+        answerTextBelowPrompt: Bool = false
     ) {
         precondition(settleDuration >= 0, "settleDuration must be non-negative")
         precondition(ocrInterval > 0, "ocrInterval must be positive")
@@ -71,6 +76,7 @@ public struct ReplyProfile: Codable, Hashable, Sendable, Identifiable {
         self.changeThreshold = changeThreshold
         self.stopKeywords = stopKeywords
         self.minConfidence = minConfidence
+        self.answerTextBelowPrompt = answerTextBelowPrompt
     }
 
     /// Conservative fallback used until a target has a calibrated profile.

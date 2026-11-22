@@ -8,9 +8,11 @@ final class ReplyProfileRegistryTests: XCTestCase {
         XCTAssertEqual(profile.id, "doubao-work")
         XCTAssertEqual(profile.bundleIdentifier, "com.work.pc.doubao")
         XCTAssertEqual(profile.replyROI?.x, 0.17)
-        XCTAssertEqual(profile.replyROI?.y, 0.08)
+        XCTAssertEqual(profile.replyROI?.y, 0.20)
+        XCTAssertEqual(profile.replyROI?.height, 0.66)
         XCTAssertEqual(profile.controlROI?.x, 0.88)
         XCTAssertEqual(profile.settleDuration, 1.0)
+        XCTAssertTrue(profile.answerTextBelowPrompt)
     }
 
     func testUnknownBundleFallsBackToGeneric() {

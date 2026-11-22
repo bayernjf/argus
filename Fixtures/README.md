@@ -29,6 +29,7 @@ ad-hoc-signed app bundles with distinct bundle identifiers:
 | `stallAx` | Freezes text and spinner for 4 s, leaves only an enabled AX Stop button | Negative: AX-only proof, must stay Streaming |
 | `static` | Shows a completed reply with no generating control | Negative: must stay Idle |
 | `blink` | Completed reply with a blinking caret | Negative: visual noise must not look Streaming |
+| `soak` | Short synthetic reply changes a block bar every 0.5 s; spinner/Stop stay visible | M4 active-OCR 4h soak: must remain Streaming |
 
 Launch options: `--mode`, `--title`, `--delay`, `--chunks`, `--log`.
 

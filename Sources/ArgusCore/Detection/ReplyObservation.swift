@@ -21,6 +21,14 @@ public struct ReplyObservation: Equatable, Sendable {
     public var isChanging: Bool?
     public var hasGeneratingIndicator: Bool?
     public var textFingerprint: String?
+    /// OCR succeeded but the answer region was empty. This lets the detector
+    /// treat the first later text as new even when its hash equals an older
+    /// reply (for example the user sends "收到" twice).
+    public var textRegionEmpty: Bool
+    /// A new right-aligned user prompt appeared. Even if the answer arrives
+    /// in the same sample (and is byte-identical to the previous answer), the
+    /// detector can still start a fresh text baseline.
+    public var newPrompt: Bool
     public var confidence: Double
     public var source: ReplySignalSource
 
@@ -28,12 +36,16 @@ public struct ReplyObservation: Equatable, Sendable {
         isChanging: Bool? = nil,
         hasGeneratingIndicator: Bool? = nil,
         textFingerprint: String? = nil,
+        textRegionEmpty: Bool = false,
+        newPrompt: Bool = false,
         confidence: Double,
         source: ReplySignalSource = .visual
     ) {
         self.isChanging = isChanging
         self.hasGeneratingIndicator = hasGeneratingIndicator
         self.textFingerprint = textFingerprint
+        self.textRegionEmpty = textRegionEmpty
+        self.newPrompt = newPrompt
         self.confidence = min(1, max(0, confidence))
         self.source = source
     }

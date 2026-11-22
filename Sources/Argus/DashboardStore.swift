@@ -54,6 +54,8 @@ private final class PollTaskBox: @unchecked Sendable {
 @Observable
 final class DashboardStore {
     private(set) var targets: [TargetApplication] = []
+    /// Session-only diagnostics. It never stores images or OCR text.
+    let diagnostics = DiagnosticsStore()
     private(set) var permissionState: CapturePermissionState = .notDetermined
     private(set) var accessibilityState: AccessibilityPermissionState = .notDetermined
     /// Ephemeral explanation for a degraded or failed window switch.
@@ -87,6 +89,10 @@ final class DashboardStore {
     /// AX tree traversal is not free; 1 Hz is enough to catch a Stop control
     /// disappearing while OCR samples at the faster visual cadence.
     private var accessibilitySignals: [UUID: CachedAXSignal] = [:]
+    /// Cheap visual baseline used only to decide when an AX probe is worth it.
+    /// It is intentionally independent of the analyzer's own baseline so the
+    /// AX decision happens before the expensive tree walk.
+    private var axGrids: [UUID: LumaGrid] = [:]
     /// Monotonic per-target attempt token; only the newest start may attach
     /// its stream when retries overlap (activation + picker Retry + rebuild).
     private var captureGeneration: [UUID: Int] = [:]
@@ -114,6 +120,9 @@ final class DashboardStore {
     private var rebuildTask: Task<Void, Never>?
     private var sessions: [UUID: CaptureSource] = [:]
     private let pollTaskBox = PollTaskBox()
+    /// Window existence is much cheaper at 1 Hz than at the 4 Hz frame poll.
+    /// A closed window still lands in `windowClosed` within one second.
+    private var lastWindowCheckAt: Date?
 
     /// Last loaded list; used to retry unresolved cards once Screen Recording
     /// becomes available without re-reading the file on every attempt.
@@ -170,10 +179,18 @@ final class DashboardStore {
 
     func refreshPermission() async {
         permissionState = await permission.currentState()
+        diagnostics.recordPermission(
+            screen: permissionState,
+            accessibility: accessibilityState
+        )
     }
 
     func refreshAccessibility() async {
         accessibilityState = await accessibility.currentState()
+        diagnostics.recordPermission(
+            screen: permissionState,
+            accessibility: accessibilityState
+        )
     }
 
     /// User-initiated from the status strip. The prompt explains the purpose
@@ -196,12 +213,15 @@ final class DashboardStore {
         // forbids.
         switch captureStates[id] {
         case .unresolved:
+            recordDiagnosticError(.activationFailed, targetID: id)
             showActivationNotice("No window is bound to this card. Re-select it first.")
             return
         case .windowClosed:
+            recordDiagnosticError(.activationFailed, targetID: id)
             showActivationNotice("This window is closed. Re-select it or wait for it to come back.")
             return
         case .failed(let reason):
+            recordDiagnosticError(.activationFailed, targetID: id)
             showActivationNotice("Capture is down (\(reason)). Re-select or remove this target.")
             return
         default:
@@ -217,6 +237,7 @@ final class DashboardStore {
                 )
             }
         } catch {
+            recordDiagnosticError(.activationFailed, targetID: id)
             showActivationNotice(describeActivationError(error, target: target))
         }
     }
@@ -235,6 +256,19 @@ final class DashboardStore {
             guard !Task.isCancelled else { return }
             self?.activationNotice = nil
         }
+    }
+
+    private func recordDiagnosticError(
+        _ code: DiagnosticErrorCode,
+        targetID: UUID,
+        at date: Date = Date()
+    ) {
+        guard let slot = diagnosticSlot(for: targetID) else { return }
+        diagnostics.recordError(code, targetID: targetID, slot: slot, at: date)
+    }
+
+    private func diagnosticSlot(for targetID: UUID) -> Int? {
+        targets.firstIndex(where: { $0.id == targetID }).map { $0 + 1 }
     }
 
     private func describeActivationError(_ error: Error, target: TargetApplication) -> String {
@@ -347,11 +381,13 @@ final class DashboardStore {
         analyzers.removeValue(forKey: id)
         lastDetectionAt.removeValue(forKey: id)
         accessibilitySignals.removeValue(forKey: id)
+        axGrids.removeValue(forKey: id)
         if let session = sessions.removeValue(forKey: id) {
             session.stop()
         }
         latestFrames.removeValue(forKey: id)
         captureStates.removeValue(forKey: id)
+        diagnostics.forget(targetID: id)
         persistedRecords.removeAll { $0.id == id }
         if rebindTargetID == id {
             rebindTargetID = nil
@@ -542,6 +578,7 @@ final class DashboardStore {
             targets.append(record.makeTargetApplication())
         }
         captureStates[record.id] = .unresolved(message)
+        recordDiagnosticError(.windowUnresolved, targetID: record.id)
     }
 
     private func rebind(targetID: UUID, to window: CaptureWindowInfo) {
@@ -615,6 +652,7 @@ final class DashboardStore {
                       !pausedTargetIDs.contains(target.id)
                 else { return }
                 captureStates[target.id] = .failed(describeCaptureError(error))
+                recordDiagnosticError(.captureFailed, targetID: target.id)
             }
         }
     }
@@ -633,14 +671,22 @@ final class DashboardStore {
 
     private func pollFrames() async {
         var deadIDs: [UUID] = []
+        let now = Date()
         // Snapshot before any await: user actions can mutate `sessions`
         // while OCR is running, and an iterator over a mutated dictionary is
         // not a safe way to keep reading frames.
         let liveSessions = sessions
-        // One window-list snapshot per cycle instead of one per target:
-        // three targets at 4 Hz used to mean 12 full CGWindowList copies a
-        // second (M2a fix).
-        let existingWindowIDs = sessions.isEmpty ? Set<UInt32>() : currentWindowIDs()
+        // One window-list snapshot per second, not one per 250 ms poll. The
+        // stale snapshot is intentionally skipped between checks; a closed
+        // window is still detected within 1 s.
+        let windowCheckDue = lastWindowCheckAt.map { now.timeIntervalSince($0) >= 1.0 } ?? true
+        let existingWindowIDs: Set<UInt32>?
+        if windowCheckDue {
+            existingWindowIDs = sessions.isEmpty ? Set<UInt32>() : currentWindowIDs()
+            lastWindowCheckAt = now
+        } else {
+            existingWindowIDs = nil
+        }
         var windowClosed = false
         for (id, session) in liveSessions {
             // A closing app can deliver didStopWithError and remove its
@@ -650,7 +696,9 @@ final class DashboardStore {
             // picked window closes without an error (observed on macOS 27).
             // The .optionAll list still contains minimized windows, so a
             // minimized target is not mistaken for a closed one.
-            if let windowID = targetWindowIDs[id], !existingWindowIDs.contains(windowID) {
+            if let existingWindowIDs,
+               let windowID = targetWindowIDs[id],
+               !existingWindowIDs.contains(windowID) {
                 captureStates[id] = .windowClosed
                 setPhase(.unknown, for: id)
                 windowClosed = true
@@ -659,15 +707,34 @@ final class DashboardStore {
             }
             if session.isFailed {
                 captureStates[id] = .failed(session.failureMessage ?? "Capture failed")
+                recordDiagnosticError(.captureFailed, targetID: id)
                 setPhase(.unknown, for: id)
                 deadIDs.append(id)
                 continue
             }
-            guard let frame = session.latestFrame() else { continue }
-            latestFrames[id] = frame.image
-            if let index = targets.firstIndex(where: { $0.id == id }) {
-                targets[index].lastFrameAt = frame.capturedAt
+            guard let frame = session.latestFrame() else {
+                if captureStates[id] == .live,
+                   let index = targets.firstIndex(where: { $0.id == id }) {
+                    let frameAge = targets[index].lastFrameAt.map {
+                        now.timeIntervalSince($0)
+                    } ?? .infinity
+                    if frameAge > 2 {
+                        recordDiagnosticError(.noFrames, targetID: id, at: now)
+                    }
+                }
+                continue
             }
+            guard let index = targets.firstIndex(where: { $0.id == id }),
+                  targets[index].lastFrameAt != frame.capturedAt
+            else {
+                // The stream is 1 fps while this poll is 4 Hz. Writing the
+                // same CGImage back into @Observable state invalidates the
+                // whole card twice per captured frame for no visual change.
+                continue
+            }
+            latestFrames[id] = frame.image
+            targets[index].lastFrameAt = frame.capturedAt
+            diagnostics.recordFrame(targetID: id, capturedAt: frame.capturedAt)
             await analyzeFrameIfDue(
                 targetID: id,
                 frame: frame,
@@ -692,17 +759,32 @@ final class DashboardStore {
         analyzers[id] = ReplySignalAnalyzer()
         lastDetectionAt[id] = nil
         accessibilitySignals[id] = nil
-        if let index = targets.firstIndex(where: { $0.id == id }) {
-            targets[index].phase = .idle
-            targets[index].phaseChangedAt = Date()
+        axGrids[id] = nil
+        if targets.contains(where: { $0.id == id }) {
+            setPhase(.idle, for: id)
         }
     }
 
     private func setPhase(_ phase: ReplyPhase, for id: UUID, at date: Date = Date()) {
         guard let index = targets.firstIndex(where: { $0.id == id }) else { return }
-        if targets[index].phase != phase {
-            targets[index].phase = phase
-            targets[index].phaseChangedAt = date
+        let previous = targets[index].phase
+        guard previous != phase else { return }
+        targets[index].phase = phase
+        targets[index].phaseChangedAt = date
+        diagnostics.recordTransition(
+            targetID: id,
+            slot: index + 1,
+            from: previous,
+            to: phase,
+            at: date
+        )
+        if phase == .unknown {
+            diagnostics.recordError(
+                .detectionUnknown,
+                targetID: id,
+                slot: index + 1,
+                at: date
+            )
         }
     }
 
@@ -728,8 +810,31 @@ final class DashboardStore {
         }
         lastDetectionAt[id] = now
 
+        // AX traversal is only needed when pixels have stopped moving:
+        // while text is visibly changing, the visual/OCR signal is already a
+        // strong generating indication. Probing on every changed frame was
+        // the remaining 1% CPU cost at 1 fps.
+        let currentGrid = LumaSampler.grid(from: frame.image, roi: profile.replyROI)
+        let axVisualChange: Bool? = currentGrid.flatMap { current in
+            axGrids[id].flatMap { current.changedPixelRatio(comparedTo: $0) }
+        }.map { $0 >= profile.changeThreshold }
+        axGrids[id] = currentGrid
+
+        let currentPhase = targets.first(where: { $0.id == id })?.phase
+        let shouldProbeAX: Bool
+        if let axVisualChange {
+            shouldProbeAX = !axVisualChange
+                && currentPhase != .idle
+                && currentPhase != .completed
+        } else {
+            // First sample: establish the AX baseline once.
+            shouldProbeAX = true
+        }
+
         let accessibilityGenerating: Bool?
-        if let cached = accessibilitySignals[id],
+        if !shouldProbeAX {
+            accessibilityGenerating = nil
+        } else if let cached = accessibilitySignals[id],
            now.timeIntervalSince(cached.sampledAt) < 1.0 {
             accessibilityGenerating = cached.value
         } else if let processID = targetProcessIDs[id],
@@ -757,6 +862,10 @@ final class DashboardStore {
             profile: profile,
             accessibilityGenerating: accessibilityGenerating
         )
+        diagnostics.recordAnalysis(
+            targetID: id,
+            latency: Date().timeIntervalSince(frame.capturedAt)
+        )
 
         guard generation == captureGeneration[id],
               captureStates[id] == .live,
@@ -767,11 +876,7 @@ final class DashboardStore {
 
         let phase = detector.observe(observation, profile: currentProfile, at: Date())
         detectors[id] = detector
-        guard let index = targets.firstIndex(where: { $0.id == id }) else { return }
-        if targets[index].phase != phase {
-            targets[index].phase = phase
-            targets[index].phaseChangedAt = detector.phaseChangedAt
-        }
+        setPhase(phase, for: id, at: detector.phaseChangedAt ?? Date())
     }
 
     /// Recoverable window-close path: retry a strict unique-window bind every
@@ -829,6 +934,39 @@ final class DashboardStore {
 
     private func describeCaptureError(_ error: Error) -> String {
         (error as? CaptureSessionError)?.description ?? error.localizedDescription
+    }
+
+    // MARK: Diagnostics
+
+    func diagnosticReport(now: Date = Date()) -> DiagnosticReport {
+        diagnostics.makeReport(
+            targets: targets,
+            captureStates: captureStates,
+            screenRecording: permissionState,
+            accessibility: accessibilityState,
+            appVersion: appVersion,
+            osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            now: now
+        )
+    }
+
+    func diagnosticText(now: Date = Date()) -> String {
+        diagnosticReport(now: now).redactedText()
+    }
+
+    private var appVersion: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+        switch (version, build) {
+        case let (version?, build?):
+            return "\(version) (\(build))"
+        case let (version?, nil):
+            return version
+        case let (nil, build?):
+            return "dev (\(build))"
+        case (nil, nil):
+            return "dev"
+        }
     }
 
     func openScreenRecordingSettings() {
