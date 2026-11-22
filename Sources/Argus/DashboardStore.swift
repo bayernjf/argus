@@ -137,7 +137,7 @@ final class DashboardStore {
         initialTargets: [TargetApplication] = [],
         files: TargetFileStore = TargetFileStore(),
         profileForBundle: @escaping @Sendable (String) -> ReplyProfile = { _ in .generic },
-        notifier: any ReplyNotifying = ReplyNotifier(),
+        notifier: (any ReplyNotifying)? = nil,
         captureFactory: @escaping CaptureSessionFactory = { targetID, window in
             try await ScreenCaptureSession(targetID: targetID, window: window)
         }
@@ -148,7 +148,7 @@ final class DashboardStore {
         self.targets = initialTargets
         self.files = files
         self.profileForBundle = profileForBundle
-        self.notifier = notifier
+        self.notifier = notifier ?? ReplyNotifier()
         self.makeSession = captureFactory
         // TCC has no change notification; re-query when the app comes back
         // to the front, which covers "user granted/revoked in System
