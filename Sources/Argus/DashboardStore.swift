@@ -116,6 +116,7 @@ final class DashboardStore {
     private let makeSession: CaptureSessionFactory
     private let profileForBundle: @Sendable (String) -> ReplyProfile
     private let files: TargetFileStore
+    private let notifier: any ReplyNotifying
     private var noticeTask: Task<Void, Never>?
     private var rebuildTask: Task<Void, Never>?
     private var sessions: [UUID: CaptureSource] = [:]
@@ -136,6 +137,7 @@ final class DashboardStore {
         initialTargets: [TargetApplication] = [],
         files: TargetFileStore = TargetFileStore(),
         profileForBundle: @escaping @Sendable (String) -> ReplyProfile = { _ in .generic },
+        notifier: (any ReplyNotifying)? = nil,
         captureFactory: @escaping CaptureSessionFactory = { targetID, window in
             try await ScreenCaptureSession(targetID: targetID, window: window)
         }
@@ -146,6 +148,7 @@ final class DashboardStore {
         self.targets = initialTargets
         self.files = files
         self.profileForBundle = profileForBundle
+        self.notifier = notifier ?? ReplyNotifier()
         self.makeSession = captureFactory
         // TCC has no change notification; re-query when the app comes back
         // to the front, which covers "user granted/revoked in System
@@ -183,6 +186,12 @@ final class DashboardStore {
             screen: permissionState,
             accessibility: accessibilityState
         )
+    }
+
+    /// Asks once for local notification permission. A denial leaves the
+    /// dashboard fully usable; only the notification is skipped.
+    func prepareNotifications() async {
+        await notifier.prepare()
     }
 
     func refreshAccessibility() async {
@@ -783,6 +792,12 @@ final class DashboardStore {
                 .detectionUnknown,
                 targetID: id,
                 slot: index + 1,
+                at: date
+            )
+        }
+        if phase == .completed {
+            notifier.notifyCompleted(
+                displayName: targets[index].displayName,
                 at: date
             )
         }
