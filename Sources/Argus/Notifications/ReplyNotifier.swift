@@ -1,5 +1,5 @@
 import Foundation
-import UserNotifications
+@preconcurrency import UserNotifications
 
 /// Local-only completion notifications. The notification carries the target
 /// app's display name only; window titles, OCR text and screenshots never
