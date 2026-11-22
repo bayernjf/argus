@@ -1,7 +1,7 @@
 # handoff — Argus
 
 - 更新日期：2026-11-22
-- 当前阶段：M4「内部 Alpha」进行中（2026-11-22 启动 3 目标 active OCR 4h soak）。M3 已完成并合入 `main`，merge `0b33a53`；M4 仍在 `dev`，AX 增强与 ChatGPT/Claude/Cursor 标定作为 M4 项继续。
+- 当前阶段：M4「内部 Alpha」进行中（2026-11-22）。3 目标 active OCR 4h soak 已跑满 240 分钟；FR-11 诊断页已构建并完成正常态 + `D03_UNKNOWN` 实机验证；CPU avg 19.6%，未达 PRD ≤8%，M4 尚未收口。M3 已完成并合入 `main`，merge `0b33a53`；M4 仍在 `dev`。
 - Tier：2
 
 ## 当前状态
@@ -21,7 +21,9 @@
 - M3 核心：新增 `ReplyObservation`、`ReplyProfile` / `NormalizedRect`、`LumaGrid`；`ReplyCompletionDetector` 增加 `phaseChangedAt`、observation 重载、settling 重开；`unknown` 清 settle 但保留 generating 历史。`ReplyProfile.generic`：settle 1.0s、OCR 0.5s、changeThreshold 0.005、confidence 0.6、`controlROI=nil`，避免正文 “stop” 被当控件。
 - M3 信号：每目标一个 `ReplySignalAnalyzer` actor；160×160 灰度帧差、SHA-256 文本指纹（不保留正文）、Vision `.fast` 本地 OCR、OCR 按“首帧/失败恢复/画面变化 + 间隔”节流；`AXStopControlProbe` 仅查绑定进程、唯一标题、enabled Stop-like `AXButton`，最多 600 节点/深度 8，`nil`=不可测量。
 - M3 融合：AX/视觉 Stop 为 true 直接 generating；文本变化 0.95；OCR 不可用降 0.45 走 unknown；文本稳定 + 小视觉变化置信 0.7，防止 spinner/光标期误完成；纯稳定 0.9。
-- M3 Dashboard：每目标 `replyProfiles`/`detectors`/`analyzers`/`lastDetectionAt`；0.25s 取帧、检测最多 0.5s 一次；回写前复核 generation/live/未暂停；暂停、移除、关窗清理检测状态；卡片 footer 两行 `State <relative>` / `Frame <relative>`；hint 改为 “M3: frame diff + OCR · Accessibility optional”。
+- M3 Dashboard：每目标 `replyProfiles`/`detectors`/`analyzers`/`lastDetectionAt`；0.25s 取帧、检测最多 0.5s 一次；回写前复核 generation/live/未暂停；暂停、移除、关窗清理检测状态；卡片 footer 两行 `State <relative>` / `Frame <relative>`；hint 改为 “M4: frame diff + OCR · diagnostics local-only”。
+- M4 诊断（已实机验证）：新增 `DiagnosticReport` / `DiagnosticsStore` / `DiagnosticsView`；记录每目标 FPS、检测耗时、最近状态转换与 D01–D08 错误码；`Diagnostics` 按钮打开只读页，`Copy diagnostics` 只复制脱敏文本，不包含截图、OCR 正文或窗口标题。2026-11-22 实机 UI：3 目标 `2.0 fps`、frame age 0.1–0.6s、detect 79–431ms；关闭 fixture A 后目标显示 `UNKNOWN / windowClosed / D03_UNKNOWN`；复制文本已用 `pbpaste` 核对，无窗口标题/OCR。`swift test` 65 tests / 0 failures；`make-app.sh` release 重建通过。
+- M4 soak 证据修正：03:27 那轮在 03:42 后 `PhaseSampler` 全部 `NO_WINDOW`（Argus 进程与三个 fixture 仍活，但 dashboard 窗口不存在），不能作为 4h 相位证据；已于约 03:50 停止。04:01:26 重新启动干净 4h soak：Argus PID `81830`、`soak.sh` PID `82370`、phase sampler PID `82371`、`caffeinate` PID `82372`；soak 日志 `build/soak-20261122-040126.log`，phase 日志 `/tmp/argus-m4-phases-clean.log`。PhaseSampler 已补 `Argus Soak A/B/C` 与 `Argus Fixture A/B/C` 两组名称；启动后 dashboard 窗口存在，3/3 `Streaming`；08:01:46 跑满 240 分钟，结果见 §M4 内部 Alpha。
 - M3 fixture：`Fixtures/ArgusChatProbe.swift` + `Fixtures/PhaseSampler.swift` + `scripts/build-m3-fixtures.sh`；A/B/C 三个合成 bundle，场景 `normal/stall/stallAx/static/blink`；事件日志只记生命周期标签与时间戳。
 - 文档：docs/02 检测章节为 M3 实际实现；docs/03 M3 标为完成；docs/04 FR-04 verified、FR-12 仍 in_progress（本地 Profile 文件与损坏回退留 M4）；docs/05 ADR-014；docs/06 证据刷新到 M3；docs/08 R-01/R-02/R-13/R-14 更新。
 
@@ -175,12 +177,39 @@ Profile：
 
 ## M4 内部 Alpha（进行中，2026-11-22）
 
-- 首次 02:57 启动的 soak 因后台任务在轮次结束时被回收，只覆盖 02:57–03:08；已废弃，不作为 4h 证据。
-- 03:27 重启干净 4h soak：3 个合成 fixture 以 `soak` 模式运行，目标 A/B/C 均 `Streaming`；4h 采样 `build/soak-20261122-032718.log`，每 30s 记录 CPU、RSS 与 `footprint_mb`（`scripts/soak.sh` 已更新）。
-- 初始 03:27–03:28：3/3 `Streaming`，约 20.9% CPU / RSS 228–255 MB / **物理 footprint 162 MB**。
-- 之前 03:24 的 RSS 400 MB 主要是共享库页；`vmmap` 物理 footprint 142 MB、峰值 172 MB，`footprint` 142 MB，不是私有大内存增长。M4 以 footprint 为准，RSS 只作参考。
-- 无 TCP/UDP 连接；Application Support 只有 `targets.json`；`caffeinate` detached 覆盖 4h；预计 07:27 结束。
-- 4h 结束前 M4 不宣称完成；活跃 CPU 仍高于 PRD §9 ≤8% 目标，需在结果出来后优化 OCR/ROI 再复测。
+结论：4h soak 的进程稳定性与内存目标通过；CPU 目标未通过；相位有一次 25 分钟窗口不可见空档。FR-11 最小诊断页已完成正常态与 `D03_UNKNOWN` 实机验证，但 D01/D04/D07 手工矩阵和 M4 其余验收未完成，因此 M4 不宣称完成。
+
+4h soak：
+
+- 启动 04:01:26，结束 08:01:46，共 480 个 30 秒样本，覆盖 240 分钟。
+- Argus PID `81830` 全程不变；`soak.sh` PID `82370`、`PhaseSampler` PID `82371`、`caffeinate` PID `82372`。
+- CPU：avg 19.6%、median 18.6%、min 7.2%、max 40.3%、P95 30.9%。PRD §9 的 3 目标 ≤8% 未达。
+- 物理 footprint：avg 143.8 MB、min 128 MB、max 159 MB、first 156 MB、last 148 MB；无持续增长。≤300 MB 目标通过。
+- 无崩溃、无重启、无 PID 变化；soak 结束后测试用 Argus 和三个 fixture 已停止。
+- 日志：`build/soak-20261122-040126.log`；相位：`/tmp/argus-m4-phases-clean.log`。
+
+相位采样：
+
+- 48 个 5 分钟样本：43 个正常，5 个 `NO_WINDOW`。
+- 坏样本为第 2–6 个，对应 04:06–04:31；第 7 个起恢复 `A=Streaming B=Streaming C=Streaming`，持续到最后一个样本。
+- 空档期间 Argus 与三个 fixture 仍活；查 `pmset` / `log show` 没有明确锁屏或显示睡眠事件。原因未完全确认，可能是 dashboard 窗口在该时段不可访问/被关闭，不能排除环境因素；不把该轮当成“全程相位连续”。
+
+FR-11 诊断页：
+
+- 源码：`Sources/ArgusCore/Diagnostics/DiagnosticReport.swift`、`Sources/Argus/Diagnostics/DiagnosticsStore.swift`、`Sources/Argus/Diagnostics/DiagnosticsView.swift`；接入 `DashboardStore` / `DashboardView`。
+- 测试：`DiagnosticReportTests` 2 项、`DiagnosticsStoreTests` 4 项；`swift build` 通过，`swift test` 65 项 0 failures（ArgusCore 50 + Argus 15）。
+- 构建：`scripts/make-app.sh` release 通过，`build/Argus.app` 签名 `Argus Dev`，bundle `com.bayernjf.argus`；Info.plist 版本仍 `0.1.0 (1)`。
+- UI 正常态：Diagnostics sheet 显示 Screen Recording/Accessibility granted、3 targets、`2.0 fps`、frame age 0.1–0.6s、detect 79–431 ms；最近事件为三个目标 `idle → streaming`。
+- 错误态：停止 fixture A 后，目标行显示 `UNKNOWN`、`capture windowClosed`、`frame age 21.6s`、`D03_UNKNOWN · Detection returned unknown`；最近事件新增 `streaming → unknown` 与 `D03_UNKNOWN`。
+- 复制：`Copy diagnostics` 后按钮变 `Copied`；`pbpaste` 得到版本、macOS、权限、三目标 bundle ID/phase/capture/fps/frameAge/detect、最近事件和隐私声明，不含窗口标题、截图或 OCR 正文。
+
+M4 仍待办：
+
+- CPU 优化：当前 19.6% 明显高于 ≤8%。优先检查 OCR 调度、ROI 裁剪和帧差阈值；优化后重跑 4h soak。
+- 诊断错误矩阵：D01（无帧）、D04（激活失败）、D07（屏幕录制权限拒绝）尚未逐项手工走查；D03 已实测。
+- 隐私：无网络/无落盘完整检查、日志抽查、暂停/移除后帧释放。
+- 稳定性：4 目标、目标应用矩阵、最小化/多 Space/多显示器、窗口关闭/重开 50 次。
+- Alpha 验收记录与 M4 收口；完成后才进入 M5 签名/公证/内测分发。
 
 ## 未接线
 
@@ -190,9 +219,9 @@ Profile：
 
 ## 下一步
 
-1. 4h soak 结束后收集 CPU/RSS、PhaseSampler、隐私检查结果；未完成前 M4 不宣称完成。
-2. 之后做 M4 诊断/脱敏检查与 AX/其余客户端标定。
-3. 如果 soak 的活跃 CPU 明显高于 PRD ≤8% 目标，优先优化 OCR 节流/ROI，再做 4h 复测。
+1. 先优化 3 目标 active OCR 的 CPU：检查 OCR 调度、ROI 裁剪与帧差节流；目标仍是 PRD ≤8%，优化后重跑 4h soak。
+2. 补 FR-11 的 D01/D04/D07 手工错误矩阵，并做无网络/无落盘/日志脱敏检查。
+3. 再补目标应用矩阵、最小化/多 Space/多显示器、窗口关闭重开等稳定性项；全部通过后写 Alpha 验收记录并收口 M4，再进入 M5。
 
 ## 已拍板（2026-11-21）
 
@@ -216,12 +245,15 @@ Profile：
 
 ```text
 swift build -> Build complete!
-swift test  -> ArgusCoreTests 48 tests, 0 failures
-swift test --filter ArgusTests -> 9 tests, 0 failures
-               （M3 覆盖：13 ReplyCompletionDetector + 3 ReplyProfile + 3 LumaGrid
-                 + 1 TargetPhaseTimestamp + 5 ReplySignalAnalyzer（含 AX 无权限））
+swift test  -> ArgusCoreTests 50 + ArgusTests 15 = 65 tests, 0 failures
+               （M4 新增：2 DiagnosticReport + 4 DiagnosticsStore）
 ./scripts/build-m3-fixtures.sh -> build/fixtures/Apps/A-D + PhaseSampler（ad-hoc 签名，无网络）
-./scripts/make-app.sh -> build/Argus.app (com.bayernjf.argus, Authority=Argus Dev；M3 重建 2026-11-22)
+./scripts/make-app.sh -> build/Argus.app (com.bayernjf.argus, Authority=Argus Dev；M4 重建 2026-11-22)
+M4 4h soak -> 04:01:26–08:01:46，480 samples；PID 81830 稳定；CPU avg 19.6%（p95 30.9、max 40.3）；
+              footprint 128–159 MB（first 156、last 148）；无崩溃/无持续增长；CPU ≤8% 未达
+M4 phase -> 48 samples，43 有效；04:06–04:31 共 5 个 NO_WINDOW；07 个样本起恢复 A/B/C Streaming
+M4 diagnostics -> 3 targets、2.0 fps、detect 79–431ms；fixture A 关闭后 D03_UNKNOWN + windowClosed；
+                  Copy 文本无窗口标题/OCR；build/soak-20261122-040126.log、/tmp/argus-m4-phases-clean.log
 M3 正例 -> finish→Completed 上界 A 2.072s / B 1.865s / C 2.220s（/tmp/m3-positive-phases.log）
 M3 负例 -> stallAx 4.002s 内始终 Streaming；static/blink 全程 Idle；无 Completed（/tmp/m3-negative-phases.log）
 M3 UI -> /tmp/argus-m3-streaming-ui.png、/tmp/argus-m3-completed-ui.png
