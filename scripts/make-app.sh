@@ -53,6 +53,7 @@ cp "$binary" "$app/Contents/MacOS/Argus"
 
 # PkgInfo: standard APPL signature with an unknown creator code.
 printf 'APPL????' > "$app/Contents/Resources/PkgInfo"
+cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -65,6 +66,8 @@ cat > "$app/Contents/Info.plist" <<PLIST
     <string>Argus</string>
     <key>CFBundleExecutable</key>
     <string>Argus</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>${bundle_id}</string>
     <key>CFBundleInfoDictionaryVersion</key>
