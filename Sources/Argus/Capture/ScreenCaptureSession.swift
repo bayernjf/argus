@@ -10,9 +10,9 @@ import ScreenCaptureKit
 /// state instead of crashing; re-establishing sessions is M2 scope.
 final class ScreenCaptureSession: NSObject, CaptureSource, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     private enum Layout {
-        /// 576 px keeps chat text legible while cutting capture/render cost;
-        /// 640 px still measured slightly above the three-target CPU budget.
-        static let outputWidth = 576
+        /// 448 px keeps three visible active targets under the CPU budget;
+        /// real-client OCR must pass at this width before acceptance.
+        static let outputWidth = 448
         static let maxOutputHeight = 1440
     }
 
@@ -50,9 +50,8 @@ final class ScreenCaptureSession: NSObject, CaptureSource, SCStreamOutput, SCStr
         configuration.width = Layout.outputWidth
         configuration.height = min(Layout.maxOutputHeight, max(1, Int((CGFloat(Layout.outputWidth) * aspect).rounded())))
         // 1 fps still meets the "thumbnail updates within 1 s" acceptance
-        // criterion, and measured 5.8% CPU at 576 px for three active targets
-        // vs 11.7% at 2 fps (docs/06 §M4 CPU optimization). The extra frame
-        // rate was the largest remaining cost and bought no detection benefit.
+        // criterion. 2 fps measured 11.7% for three active targets; the
+        // current 448 px/1 fps configuration is re-measured for M4.
         configuration.minimumFrameInterval = CMTime(seconds: 1.0, preferredTimescale: 1_000_000)
         configuration.queueDepth = 3
         configuration.showsCursor = false

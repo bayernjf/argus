@@ -4,8 +4,9 @@ import SwiftUI
 struct DashboardView: View {
     @State private var store: DashboardStore
     @State private var showingDiagnostics = false
-    /// One clock for all cards. Per-card clocks caused several SwiftUI
-    /// updates per second and dominated idle CPU on the dashboard.
+    /// One clock for all cards. The thumbnail itself updates at 1 fps; the
+    /// elapsed footer only needs coarse resolution, so 2 s halves SwiftUI
+    /// invalidation cost without affecting the freshness requirement.
     @State private var clock = Date()
 
     init(store: DashboardStore = DashboardStore(profileForBundle: ReplyProfileRegistry.profileForBundle)) {
@@ -71,7 +72,7 @@ struct DashboardView: View {
         }
         .task {
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
                 guard !Task.isCancelled else { return }
                 clock = Date()
             }
