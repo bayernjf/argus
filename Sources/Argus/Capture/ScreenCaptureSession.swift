@@ -4,13 +4,15 @@ import CoreImage
 import CoreMedia
 import ScreenCaptureKit
 
-/// M1c single-window capture: one SCStream per target, 2 fps, only the
+/// M1c single-window capture: one SCStream per target, 1 fps, only the
 /// latest frame kept in memory (docs/02 §捕获会话规格). Unrecoverable stream
 /// stops (window closed, permission revoked) surface through the failure
 /// state instead of crashing; re-establishing sessions is M2 scope.
 final class ScreenCaptureSession: NSObject, CaptureSource, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     private enum Layout {
-        static let outputWidth = 960
+        /// 576 px keeps chat text legible while cutting capture/render cost;
+        /// 640 px still measured slightly above the three-target CPU budget.
+        static let outputWidth = 576
         static let maxOutputHeight = 1440
     }
 
@@ -47,10 +49,11 @@ final class ScreenCaptureSession: NSObject, CaptureSource, SCStreamOutput, SCStr
         let configuration = SCStreamConfiguration()
         configuration.width = Layout.outputWidth
         configuration.height = min(Layout.maxOutputHeight, max(1, Int((CGFloat(Layout.outputWidth) * aspect).rounded())))
-        // 2 fps: the M1 exit criterion is "thumbnail updates within 1 s of a
-        // content change"; at 1 fps the pipeline alone could exceed it
-        // (docs/03 §退出条件, observed during M1 acceptance).
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 2)
+        // 1 fps still meets the "thumbnail updates within 1 s" acceptance
+        // criterion, and measured 5.8% CPU at 576 px for three active targets
+        // vs 11.7% at 2 fps (docs/06 §M4 CPU optimization). The extra frame
+        // rate was the largest remaining cost and bought no detection benefit.
+        configuration.minimumFrameInterval = CMTime(seconds: 1.0, preferredTimescale: 1_000_000)
         configuration.queueDepth = 3
         configuration.showsCursor = false
         configuration.capturesAudio = false

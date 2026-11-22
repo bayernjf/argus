@@ -89,6 +89,10 @@ final class DashboardStore {
     /// AX tree traversal is not free; 1 Hz is enough to catch a Stop control
     /// disappearing while OCR samples at the faster visual cadence.
     private var accessibilitySignals: [UUID: CachedAXSignal] = [:]
+    /// Cheap visual baseline used only to decide when an AX probe is worth it.
+    /// It is intentionally independent of the analyzer's own baseline so the
+    /// AX decision happens before the expensive tree walk.
+    private var axGrids: [UUID: LumaGrid] = [:]
     /// Monotonic per-target attempt token; only the newest start may attach
     /// its stream when retries overlap (activation + picker Retry + rebuild).
     private var captureGeneration: [UUID: Int] = [:]
@@ -116,6 +120,9 @@ final class DashboardStore {
     private var rebuildTask: Task<Void, Never>?
     private var sessions: [UUID: CaptureSource] = [:]
     private let pollTaskBox = PollTaskBox()
+    /// Window existence is much cheaper at 1 Hz than at the 4 Hz frame poll.
+    /// A closed window still lands in `windowClosed` within one second.
+    private var lastWindowCheckAt: Date?
 
     /// Last loaded list; used to retry unresolved cards once Screen Recording
     /// becomes available without re-reading the file on every attempt.
@@ -374,6 +381,7 @@ final class DashboardStore {
         analyzers.removeValue(forKey: id)
         lastDetectionAt.removeValue(forKey: id)
         accessibilitySignals.removeValue(forKey: id)
+        axGrids.removeValue(forKey: id)
         if let session = sessions.removeValue(forKey: id) {
             session.stop()
         }
@@ -668,10 +676,17 @@ final class DashboardStore {
         // while OCR is running, and an iterator over a mutated dictionary is
         // not a safe way to keep reading frames.
         let liveSessions = sessions
-        // One window-list snapshot per cycle instead of one per target:
-        // three targets at 4 Hz used to mean 12 full CGWindowList copies a
-        // second (M2a fix).
-        let existingWindowIDs = sessions.isEmpty ? Set<UInt32>() : currentWindowIDs()
+        // One window-list snapshot per second, not one per 250 ms poll. The
+        // stale snapshot is intentionally skipped between checks; a closed
+        // window is still detected within 1 s.
+        let windowCheckDue = lastWindowCheckAt.map { now.timeIntervalSince($0) >= 1.0 } ?? true
+        let existingWindowIDs: Set<UInt32>?
+        if windowCheckDue {
+            existingWindowIDs = sessions.isEmpty ? Set<UInt32>() : currentWindowIDs()
+            lastWindowCheckAt = now
+        } else {
+            existingWindowIDs = nil
+        }
         var windowClosed = false
         for (id, session) in liveSessions {
             // A closing app can deliver didStopWithError and remove its
@@ -681,7 +696,9 @@ final class DashboardStore {
             // picked window closes without an error (observed on macOS 27).
             // The .optionAll list still contains minimized windows, so a
             // minimized target is not mistaken for a closed one.
-            if let windowID = targetWindowIDs[id], !existingWindowIDs.contains(windowID) {
+            if let existingWindowIDs,
+               let windowID = targetWindowIDs[id],
+               !existingWindowIDs.contains(windowID) {
                 captureStates[id] = .windowClosed
                 setPhase(.unknown, for: id)
                 windowClosed = true
@@ -707,10 +724,16 @@ final class DashboardStore {
                 }
                 continue
             }
-            latestFrames[id] = frame.image
-            if let index = targets.firstIndex(where: { $0.id == id }) {
-                targets[index].lastFrameAt = frame.capturedAt
+            guard let index = targets.firstIndex(where: { $0.id == id }),
+                  targets[index].lastFrameAt != frame.capturedAt
+            else {
+                // The stream is 1 fps while this poll is 4 Hz. Writing the
+                // same CGImage back into @Observable state invalidates the
+                // whole card twice per captured frame for no visual change.
+                continue
             }
+            latestFrames[id] = frame.image
+            targets[index].lastFrameAt = frame.capturedAt
             diagnostics.recordFrame(targetID: id, capturedAt: frame.capturedAt)
             await analyzeFrameIfDue(
                 targetID: id,
@@ -736,6 +759,7 @@ final class DashboardStore {
         analyzers[id] = ReplySignalAnalyzer()
         lastDetectionAt[id] = nil
         accessibilitySignals[id] = nil
+        axGrids[id] = nil
         if targets.contains(where: { $0.id == id }) {
             setPhase(.idle, for: id)
         }
@@ -786,8 +810,31 @@ final class DashboardStore {
         }
         lastDetectionAt[id] = now
 
+        // AX traversal is only needed when pixels have stopped moving:
+        // while text is visibly changing, the visual/OCR signal is already a
+        // strong generating indication. Probing on every changed frame was
+        // the remaining 1% CPU cost at 1 fps.
+        let currentGrid = LumaSampler.grid(from: frame.image, roi: profile.replyROI)
+        let axVisualChange: Bool? = currentGrid.flatMap { current in
+            axGrids[id].flatMap { current.changedPixelRatio(comparedTo: $0) }
+        }.map { $0 >= profile.changeThreshold }
+        axGrids[id] = currentGrid
+
+        let currentPhase = targets.first(where: { $0.id == id })?.phase
+        let shouldProbeAX: Bool
+        if let axVisualChange {
+            shouldProbeAX = !axVisualChange
+                && currentPhase != .idle
+                && currentPhase != .completed
+        } else {
+            // First sample: establish the AX baseline once.
+            shouldProbeAX = true
+        }
+
         let accessibilityGenerating: Bool?
-        if let cached = accessibilitySignals[id],
+        if !shouldProbeAX {
+            accessibilityGenerating = nil
+        } else if let cached = accessibilitySignals[id],
            now.timeIntervalSince(cached.sampledAt) < 1.0 {
             accessibilityGenerating = cached.value
         } else if let processID = targetProcessIDs[id],

@@ -6,6 +6,7 @@ struct MonitoringCardView: View {
     let target: TargetApplication
     var frameImage: CGImage?
     var captureState: CaptureState?
+    var now: Date = Date()
     var onRemove: (() -> Void)?
     var onReselect: (() -> Void)?
     var onActivate: (() -> Void)?
@@ -268,22 +269,37 @@ struct MonitoringCardView: View {
             }
             HStack(spacing: 8) {
                 if let phaseChangedAt = target.phaseChangedAt {
-                    HStack(spacing: 3) {
-                        Text("State")
-                        Text(phaseChangedAt, style: .relative)
-                    }
+                    elapsed("State", since: phaseChangedAt)
                 }
                 if let lastFrameAt = target.lastFrameAt {
-                    HStack(spacing: 3) {
-                        Text("Frame")
-                        Text(lastFrameAt, style: .relative)
-                    }
+                    elapsed("Frame", since: lastFrameAt)
                 }
             }
             .font(.caption2.monospacedDigit())
             .foregroundStyle(.secondary)
             .lineLimit(1)
         }
+    }
+
+    private func elapsed(_ prefix: String, since date: Date) -> some View {
+        HStack(spacing: 3) {
+            Text(prefix)
+            Text(Self.elapsedText(now.timeIntervalSince(date)))
+        }
+    }
+
+    private static func elapsedText(_ interval: TimeInterval) -> String {
+        let seconds = max(0, Int(interval))
+        if seconds < 60 {
+            return "\(seconds) sec"
+        }
+        if seconds < 3_600 {
+            return "\(seconds / 60) min \(seconds % 60) sec"
+        }
+        if seconds < 86_400 {
+            return "\(seconds / 3_600) hr \(seconds % 3_600 / 60) min"
+        }
+        return "\(seconds / 86_400) days"
     }
 }
 

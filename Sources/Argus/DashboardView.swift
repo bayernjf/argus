@@ -4,6 +4,9 @@ import SwiftUI
 struct DashboardView: View {
     @State private var store: DashboardStore
     @State private var showingDiagnostics = false
+    /// One clock for all cards. Per-card clocks caused several SwiftUI
+    /// updates per second and dominated idle CPU on the dashboard.
+    @State private var clock = Date()
 
     init(store: DashboardStore = DashboardStore(profileForBundle: ReplyProfileRegistry.profileForBundle)) {
         _store = State(initialValue: store)
@@ -30,6 +33,7 @@ struct DashboardView: View {
                             target: target,
                             frameImage: store.latestFrames[target.id],
                             captureState: store.captureStates[target.id],
+                            now: clock,
                             onRemove: {
                                 store.removeTarget(id: target.id)
                             },
@@ -64,6 +68,13 @@ struct DashboardView: View {
             await store.refreshPermission()
             await store.refreshAccessibility()
             await store.restorePersistedTargets()
+        }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else { return }
+                clock = Date()
+            }
         }
     }
 
