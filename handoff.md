@@ -1,7 +1,7 @@
 # handoff — Argus
 
 - 更新日期：2026-11-22
-- 当前阶段：M4「内部 Alpha」已完成（2026-11-22）。448 px / 1 fps 的 3 目标 active OCR 4h 平均 5.92%；豆包真实 OCR、隐私检查、D03/D04 诊断实机通过，D01/D07 由单测覆盖。M3 已完成并合入 `main`，merge `0b33a53`；M4 已通过 PR #12 合入 `main`，merge `195d986`；M5 按“只自用”暂缓。
+- 当前阶段：M4「内部 Alpha」已完成（2026-11-22）。448 px / 1 fps 的 3 目标 active OCR 4h 平均 5.92%；豆包真实 OCR、隐私检查、D03/D04 诊断实机通过，D01/D07 由单测覆盖。M3 已完成并合入 `main`，merge `0b33a53`；M4 已通过 PR #12 合入 `main`，merge `195d986`；通知随 PR #14 合入 `main`，merge `33d37e8`，并完成本机系统通知投递验证；M5 按“只自用”暂缓。
 - Tier：2
 
 ## 当前状态
@@ -23,7 +23,7 @@
 - M3 融合：AX/视觉 Stop 为 true 直接 generating；文本变化 0.95；OCR 不可用降 0.45 走 unknown；文本稳定 + 小视觉变化置信 0.7，防止 spinner/光标期误完成；纯稳定 0.9。
 - M3 Dashboard：每目标 `replyProfiles`/`detectors`/`analyzers`/`lastDetectionAt`；0.25s 取帧、检测最多 0.5s 一次；回写前复核 generation/live/未暂停；暂停、移除、关窗清理检测状态；卡片 footer 两行 `State <relative>` / `Frame <relative>`；hint 改为 “M4: frame diff + OCR · diagnostics local-only”。
 - M4 诊断（已实机验证）：新增 `DiagnosticReport` / `DiagnosticsStore` / `DiagnosticsView`；记录每目标 FPS、检测耗时、最近状态转换与 D01–D08 错误码；`Copy diagnostics` 只复制脱敏文本，不含截图、OCR 正文或窗口标题。2026-11-22 实机验证 `D03_UNKNOWN`（关闭 fixture A）与 `D04_ACTIVATION`（点击已关闭目标的切窗按钮）；D01/D07 由 `DiagnosticsStoreTests` 覆盖。`swift test` 76 tests / 0 failures。
-- 本地通知：新增 `Sources/Argus/Notifications/ReplyNotifier.swift`，在 `DashboardStore.setPhase` 进入 `Completed` 时发 macOS 本地通知；正文只含目标应用名，不含窗口标题或 OCR 正文。`ReplyNotifierTests` 2 项覆盖文案脱敏与空名称回退。
+- 本地通知：新增 `Sources/Argus/Notifications/ReplyNotifier.swift`，在 `DashboardStore.setPhase` 进入 `Completed` 时发 macOS 本地通知；正文只含目标应用名，不含窗口标题或 OCR 正文。`ReplyNotifierTests` 2 项覆盖文案脱敏与空名称回退。2026-11-22 实机 fixture A `Streaming→Completed` 后，系统日志出现 `Adding notification request` 与 `Added notification request: [ hasError: 0 ]`，NotificationCenter 记录 `alertStyle: banner` 并加入历史；因截图/录屏使 `displayShared`，banner 被系统静音，证据 `build/notify-runtime-20261122.log`。
 - M4 最终 4h soak：16:11:07–20:11:25，Argus PID `84290` 全程不变；480 samples / 239.8 分钟，CPU avg 5.92%、median 5.90%、P95 6.80%、max 7.30%；RSS avg 102.3 MB（91.6–122.9 MB）；48/48 相位采样 3/3 Streaming，0 NO_WINDOW。日志 `build/soak-20261122-161107.log`、`build/soak-cputime-20261122-final3.log`、`build/soak-phase-20261122-final3.log`。
 - M3 fixture：`Fixtures/ArgusChatProbe.swift` + `Fixtures/PhaseSampler.swift` + `scripts/build-m3-fixtures.sh`；A/B/C 三个合成 bundle，场景 `normal/stall/stallAx/static/blink`；事件日志只记生命周期标签与时间戳。
 - 文档：docs/02 检测章节为 M3 实际实现；docs/03 M3 标为完成；docs/04 FR-04 verified、FR-12 仍 in_progress（本地 Profile 文件与损坏回退留 M4）；docs/05 ADR-014；docs/06 证据刷新到 M3；docs/08 R-01/R-02/R-13/R-14 更新。
@@ -175,6 +175,7 @@ Profile：
 - PR #10：`https://github.com/bayernjf/argus/pull/10`；merge `6a6f43c`。
 - PR #11：`https://github.com/bayernjf/argus/pull/11`；merge `0b33a53`。
 - PR #12：`https://github.com/bayernjf/argus/pull/12`；merge `195d986`，CI `build-and-test` 通过。
+- PR #14：`https://github.com/bayernjf/argus/pull/14`；merge `33d37e8`，CI `build-and-test` 通过（`2bd55fb` 修默认参数 SILGen 崩溃，`ef8f83b` 用 `@preconcurrency import UserNotifications` 修 Swift 6.1 Sendable 错误）。
 - 清理：fixture 进程与 Argus 测试进程已停止；测试 `targets.json` 归档到 `/tmp/argus-m3-targets-final.json`；`/tmp/ArgusM3Fixtures` 已删除；证据日志与截图保留；豆包工作合成会话与误发消息已由用户手动删除。
 
 ## M4 内部 Alpha（已完成，2026-11-22）
@@ -213,6 +214,14 @@ FR-11 诊断页：
 - 自动化：`DiagnosticsStoreTests` 覆盖 D01_NO_FRAMES 与 D07_SCREEN_RECORDING 的记录与脱敏；`swift test` 76 tests / 0 failures（56 ArgusCoreTests + 20 ArgusTests）。
 - D07 未对主 App 做破坏性 TCC 重置；曾用临时 bundle 尝试，系统状态为 `notDetermined`，未进入 `denied`，主 App 授权未受影响。
 
+通知运行时验证（2026-11-22）：
+
+- 主 App 通知授权状态运行时读到 `authorized`（枚举值 2），无需再次弹窗。
+- fixture A 绑定后经历 `Streaming→Settling→Completed`；进入 `Completed` 时 Argus 发出本地通知。
+- 系统日志：`Adding notification request ... destinations: Default`；紧接 `Added notification request: [ hasError: 0 ]`。
+- NotificationCenter 日志：`alertStyle: banner`，随后 `added to history`；因 `screencapture` 让显示器处于 `displayShared`，banner 与声音被系统静音（`muted by display state`）。因此屏幕截图里没有横幅，但通知确已投递并进入通知历史。
+- 证据：`build/notify-runtime-20261122.log`。
+
 已知边界（不阻塞 M4，进入后续迭代）：
 
 - 窗口关闭/重开 50 次、显示器休眠/唤醒、锁屏/解锁、4 目标、多 Space/多显示器矩阵未穷举。
@@ -228,7 +237,7 @@ FR-11 诊断页：
 ## 下一步
 
 1. 只做自用价值：真实使用观察、误报/漏报收集、按实际客户端加 Profile。
-2. 通知首次启动需在系统弹窗中允许；拒绝后 Dashboard 仍可用，可在系统设置里重新开启。
+2. 通知已完成本机投递验证；换新机器或重置通知权限后，首次启动仍需在系统弹窗允许，拒绝后可在系统设置里重新开启。
 3. 补窗口关闭/重开、显示器休眠/锁屏等按实际遇到的问题再修。
 4. M5 签名/公证/分发继续冻结，等需要给第二台机器或他人使用时再开。
 
