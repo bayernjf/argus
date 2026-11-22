@@ -15,6 +15,7 @@ actor ReplySignalAnalyzer {
     private var lastOCRAt: Date?
     private var ocrAvailable = false
     private var visualStopControl = false
+    private var previousPromptCutoff: CGFloat?
 
     func reset() {
         previousGrid = nil
@@ -22,6 +23,7 @@ actor ReplySignalAnalyzer {
         lastOCRAt = nil
         ocrAvailable = false
         visualStopControl = false
+        previousPromptCutoff = nil
     }
 
     /// Runs vision and (optional) Accessibility signals. Accessibility is
@@ -40,6 +42,8 @@ actor ReplySignalAnalyzer {
         let visualChanged = visualChangeRatio.map { $0 >= profile.changeThreshold }
 
         var fingerprint = previousFingerprint
+        var textRegionEmpty = false
+        var newPrompt = false
         // OCR is the expensive signal: run it for the baseline, to recover
         // from a failed read, and only when pixels actually moved. A static
         // completed card must not burn 2 Hz Vision work forever.
@@ -50,8 +54,25 @@ actor ReplySignalAnalyzer {
 
         if ocrDue {
             lastOCRAt = frame.capturedAt
-            if let recognized = try? OCRRecognizer.recognizeText(in: image, roi: profile.replyROI) {
-                fingerprint = TextFingerprint.make(from: recognized)
+            if let lines = try? OCRRecognizer.lines(in: image, roi: profile.replyROI) {
+                let promptCutoff = profile.answerTextBelowPrompt
+                    ? OCRRecognizer.promptCutoff(from: lines)
+                    : nil
+                let recognized = profile.answerTextBelowPrompt
+                    ? OCRRecognizer.answerText(from: lines, promptCutoff: promptCutoff)
+                    : lines.map(\.text).joined(separator: "\n")
+                if let promptCutoff {
+                    newPrompt = previousPromptCutoff.map { promptCutoff > $0 + 0.02 } ?? true
+                    previousPromptCutoff = promptCutoff
+                }
+                textRegionEmpty = recognized.isEmpty
+                if recognized.isEmpty {
+                    // A blank answer region is not a completion signal. Keep
+                    // the fingerprint nil so the detector waits for new text.
+                    fingerprint = nil
+                } else {
+                    fingerprint = TextFingerprint.make(from: recognized)
+                }
                 ocrAvailable = true
             } else {
                 // Keep the last good hash: an OCR failure is not evidence that
@@ -108,6 +129,8 @@ actor ReplySignalAnalyzer {
             isChanging: isChanging,
             hasGeneratingIndicator: hasGeneratingIndicator,
             textFingerprint: fingerprint,
+            textRegionEmpty: textRegionEmpty,
+            newPrompt: newPrompt,
             confidence: confidence,
             source: source
         )
@@ -168,7 +191,13 @@ enum TextFingerprint {
 /// Local Vision OCR. Recognition runs only on the supplied image/ROI; no text
 /// is persisted and no network request is made.
 enum OCRRecognizer {
-    static func recognizeText(in image: CGImage, roi: ArgusCore.NormalizedRect?) throws -> String {
+    struct Line {
+        let text: String
+        /// Normalized to the cropped ROI, Vision's bottom-left origin.
+        let bounds: CGRect
+    }
+
+    static func lines(in image: CGImage, roi: ArgusCore.NormalizedRect?) throws -> [Line] {
         let source = LumaSampler.crop(image, to: roi) ?? image
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .fast
@@ -184,12 +213,37 @@ enum OCRRecognizer {
                 }
                 return lhs.boundingBox.minX < rhs.boundingBox.minX
             }
-            .compactMap { observation -> String? in
+            .compactMap { observation -> Line? in
                 guard let candidate = observation.topCandidates(1).first,
                       candidate.confidence >= 0.3
                 else { return nil }
-                return candidate.string
+                return Line(text: candidate.string, bounds: observation.boundingBox)
             }
-            .joined(separator: "\n")
+    }
+
+    static func recognizeText(in image: CGImage, roi: ArgusCore.NormalizedRect?) throws -> String {
+        try lines(in: image, roi: roi).map(\.text).joined(separator: "\n")
+    }
+
+    /// Vision-normalized bottom edge of the latest right-aligned user bubble.
+    static func promptCutoff(from lines: [Line]) -> CGFloat? {
+        lines
+            .filter { $0.bounds.minX >= 0.26 && $0.bounds.maxX >= 0.70 }
+            .map(\.bounds.maxY)
+            .max()
+    }
+
+    /// Keeps only text below the latest right-aligned user bubble. This makes
+    /// a newly sent prompt invisible to the completion fingerprint while still
+    /// catching assistant text that appears below it.
+    static func answerText(from lines: [Line], promptCutoff: CGFloat?) -> String {
+        let answer = promptCutoff.map { cutoff in
+            lines.filter { $0.bounds.maxY < cutoff }
+        } ?? lines
+        return answer.map(\.text).joined(separator: "\n")
+    }
+
+    static func answerText(from lines: [Line]) -> String {
+        answerText(from: lines, promptCutoff: promptCutoff(from: lines))
     }
 }
