@@ -4,6 +4,20 @@
 - 当前阶段：M4「内部 Alpha」已完成（2026-11-22）。448 px / 1 fps 的 3 目标 active OCR 4h 平均 5.92%；豆包真实 OCR、隐私检查、D03/D04 诊断实机通过，D01/D07 由单测覆盖。M3 已完成并合入 `main`，merge `0b33a53`；M4 已通过 PR #12 合入 `main`，merge `195d986`；通知随 PR #14 合入 `main`，merge `33d37e8`，并完成本机系统通知投递验证；M5 按“只自用”暂缓。
 - Tier：2
 
+## 待办登记（标准）
+
+> 本段是本产品唯一活跃待办入口；详细背景见下方原有章节。
+> 最近同步：2026-11-22
+
+<!-- tier:todos v1 -->
+| id | title | status | priority | owner | next | evidence | updated |
+|---|---|---|---|---|---|---|---|
+| AR-01 | 真实使用观察与误报/漏报收集 | open | p2 | self | 按实际客户端加 Profile，持续收集误报/漏报 | `handoff.md` 下一步 | 2026-11-22 |
+| AR-02 | M5 签名 / 公证 / 分发 | planned | p2 | self | 继续冻结；需要第二台机器或他人使用时再开 | `handoff.md` 下一步 | 2026-11-22 |
+| AR-03 | 窗口关闭 / 显示器休眠等边界修复 | open | p3 | self | 按实际遇到的问题再修 | `handoff.md` 下一步 | 2026-11-22 |
+| AR-04 | 待拍板：SLA / 多显示器 / App Store / 正式名称 | planned | p2 | owner | 逐项拍板 | `handoff.md` 待拍板 | 2026-11-22 |
+<!-- /tier:todos -->
+
 ## 当前状态
 
 - 仓库骨架：Swift Package，`ArgusCore` library + `Argus` executable + `ArgusCoreTests`；Package.swift 已升到 swift-tools 6.0（Swift 6 语言模式，与 AGENTS.md 对齐）。
